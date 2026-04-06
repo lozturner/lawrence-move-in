@@ -1,0 +1,29 @@
+{
+  "rules": {
+    "Telegram.exe|\u200eLAURENCE: loz clipboard chat @ \u200eStreets of Loz Support Chat": [
+      "ApplicationFrameHost.exe|Settings",
+      "comet.exe|React App - Comet",
+      "claude.exe|Claude",
+      "msedge.exe|YouTube and 16 more pages - Personal - Microsoft\u200b Edge",
+      "Microsoft.CmdPal.UI.exe|Command Palette",
+      "MicrosoftWhiteboard.exe|Microsoft Whiteboard",
+      "PowerToys.QuickAccess.exe|PowerToys Quick Access (Preview)",
+      "python.exe|Window Tiles",
+      "Shadow PC.exe|Shadow PC",
+      "ShareX.exe|ShareX - Image history (Total: 4,320 - Filtered: 250)",
+      "SystemSettings.exe|Settings",
+      "python.exe|Screen Buddy",
+      "unknown|On-Screen Keyboard",
+      "TextInputHost.exe|Microsoft Text Input Application",
+      "Telegram.exe|\u200eStreets of Loz Support Chat (7978)"
+    ],
+    "claude.exe|Claude": [
+      "ApplicationFrameHost.exe|Settings"
+    ],
+    "unknown|On-Screen Keyboard": [
+      "ApplicationFrameHost.exe|Settings"
+    ]
+  },
+  "enabled": true,
+  "minimise_mode": "minimize"
+}

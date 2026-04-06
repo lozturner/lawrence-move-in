@@ -1,0 +1,24 @@
+{
+  "custom_groups": {
+    "comet.exe": "Media"
+  },
+  "collapsed": [
+    "Media"
+  ],
+  "locked_order": {
+    "Terminals": [
+      "python.exe|Screen Buddy",
+      "python.exe|Screen Buddy"
+    ],
+    "Other": [
+      "comet.exe|Flowcharts - PseudoEditor - Comet"
+    ],
+    "AI": [
+      "claude.exe|Claude"
+    ],
+    "Browsers": [
+      "msedge.exe|Google Calendar - Sunday, 29 March 2026, today and 17 more p"
+    ]
+  },
+  "locked": false
+}

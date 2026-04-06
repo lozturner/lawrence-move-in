@@ -1,0 +1,50 @@
+---
+title: Hot Corner v2.0.0 — Multi-Corner Behaviour Flow
+---
+flowchart TD
+    A[Mouse moves] --> B{Poll every 30ms}
+    B --> C{Global enabled?}
+    C -- No --> B
+    C -- Yes --> D{Cursor in any corner zone?}
+    D -- No --> E[Reset all dwell timers] --> B
+    D -- Yes --> F[Identify which corner]
+
+    F --> G{Corner enabled?}
+    G -- No --> B
+    G -- Yes --> H{Dwell timer started?}
+    H -- No --> I[Start dwell timer] --> B
+    H -- Yes --> J{Dwell >= threshold?}
+    J -- No --> B
+    J -- Yes --> K{Cooldown elapsed?}
+    K -- No --> B
+    K -- Yes --> L[Fire corner's action]
+
+    L --> M{Which action?}
+    M -- task_view --> N[Send Win+Tab]
+    M -- alt_tab --> O[Send Alt+Tab]
+    M -- telegram_chat --> P["Open tg://openmessage?chat_id=ID"]
+    N --> Q[Reset + cooldown 1s]
+    O --> Q
+    P --> Q
+    Q --> B
+
+    subgraph Corners ["Per-Corner Config"]
+        TL["↖ Top-Left: Task View"]
+        BL["↙ Bottom-Left: Telegram Chat"]
+        TR["↗ Top-Right: (off)"]
+        BR["↘ Bottom-Right: (off)"]
+    end
+
+    subgraph Tray ["System Tray Controls"]
+        T1[Toggle all on/off]
+        T2[Per-corner enable + action]
+        T3[Sensitivity px]
+        T4[Dwell time ms]
+        T5[Quit]
+    end
+
+    T1 -.-> C
+    T2 -.-> G
+    T2 -.-> M
+    T3 -.-> D
+    T4 -.-> J

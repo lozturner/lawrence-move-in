@@ -1,0 +1,76 @@
+{
+  "items": [
+    {
+      "text": "the latency between me thinking and then but got",
+      "source": "voice",
+      "date": "2026-04-02 10:39",
+      "severity": "medium",
+      "tags": [],
+      "notes": "",
+      "workaround": "",
+      "fixed": false,
+      "fixed_date": "",
+      "fix_note": ""
+    },
+    {
+      "text": "the computer weakness and annoyance and a personal weakness in annoyance",
+      "source": "voice",
+      "date": "2026-04-02 10:39",
+      "severity": "medium",
+      "tags": [],
+      "notes": "",
+      "workaround": "",
+      "fixed": false,
+      "fixed_date": "",
+      "fix_note": ""
+    },
+    {
+      "text": "Looking at your screen, the most likely annoyance is the excessive number of browser tabs open - you have at least 11-12 tabs visible in your browser tab bar, with some showing close buttons and others appearing crowded together. This creates visual clutter and makes it difficult to navigate between specific tabs or find what you're looking for.",
+      "source": "screenshot",
+      "date": "2026-03-31 16:10",
+      "severity": "medium",
+      "tags": [],
+      "notes": "",
+      "workaround": "",
+      "fixed": false,
+      "fixed_date": "",
+      "fix_note": ""
+    },
+    {
+      "text": "the delay",
+      "source": "voice",
+      "date": "2026-03-31 13:57",
+      "severity": "medium",
+      "tags": [],
+      "notes": "",
+      "workaround": "",
+      "fixed": false,
+      "fixed_date": "",
+      "fix_note": ""
+    },
+    {
+      "text": "the two seconds",
+      "source": "voice",
+      "date": "2026-03-31 13:57",
+      "severity": "medium",
+      "tags": [],
+      "notes": "",
+      "workaround": "",
+      "fixed": false,
+      "fixed_date": "",
+      "fix_note": ""
+    },
+    {
+      "text": "everything takes to get voice input wanted to two seconds",
+      "source": "voice",
+      "date": "2026-03-31 13:56",
+      "severity": "medium",
+      "tags": [],
+      "notes": "",
+      "workaround": "",
+      "fixed": false,
+      "fixed_date": "",
+      "fix_note": ""
+    }
+  ]
+}

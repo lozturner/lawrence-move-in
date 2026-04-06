@@ -1,0 +1,51 @@
+---
+title: ShowMe — Behaviour Observer Flow
+---
+flowchart TD
+    START([Launch ShowMe]) --> SESSION[Create timestamped session folder]
+    SESSION --> READY{Ready — waiting for input}
+
+    READY -->|Type text| TEXT[Log text note + auto-tag]
+    READY -->|Click Screenshot| SCREEN[Capture full screen JPEG]
+    READY -->|Click Voice| VOICE_START[Start mic recording]
+    READY -->|Click Video| VIDEO[Record screen for N seconds]
+    READY -->|Click System| SNAP[Capture processes, active window, CPU/RAM]
+    READY -->|Click PSR| PSR_START[Start Windows Steps Recorder]
+
+    TEXT --> CARD[Add timestamped card to timeline]
+    SCREEN --> CARD
+    VIDEO --> CARD
+    SNAP --> CARD
+
+    VOICE_START --> VOICE_REC{Recording...}
+    VOICE_REC -->|Click Stop| VOICE_STOP[Save WAV file]
+    VOICE_STOP --> CARD
+
+    PSR_START --> PSR_RUN{PSR running...}
+    PSR_RUN -->|Click PSR Stop| PSR_STOP[Stop PSR, save steps.zip]
+    PSR_STOP --> CARD
+
+    CARD --> LOG[Append event to timeline.jsonl]
+    LOG --> READY
+
+    READY -->|Close window| SHUTDOWN[Stop active recordings]
+    SHUTDOWN --> SUMMARY[Generate session_summary.md]
+    SUMMARY --> END([Session complete])
+
+    style START fill:#94e2d5,color:#0a0a14
+    style END fill:#a6e3a1,color:#0a0a14
+    style READY fill:#1a1a3a,color:#cdd6f4,stroke:#cba6f7
+    style CARD fill:#1a1a3a,color:#cdd6f4
+    style LOG fill:#12122a,color:#89b4fa
+    style SHUTDOWN fill:#f38ba8,color:#0a0a14
+    style SUMMARY fill:#f9e2af,color:#0a0a14
+    style TEXT fill:#cba6f7,color:#0a0a14
+    style SCREEN fill:#89b4fa,color:#0a0a14
+    style VOICE_START fill:#a6e3a1,color:#0a0a14
+    style VOICE_REC fill:#a6e3a1,color:#0a0a14
+    style VOICE_STOP fill:#a6e3a1,color:#0a0a14
+    style VIDEO fill:#fab387,color:#0a0a14
+    style SNAP fill:#94e2d5,color:#0a0a14
+    style PSR_START fill:#f9e2af,color:#0a0a14
+    style PSR_RUN fill:#f9e2af,color:#0a0a14
+    style PSR_STOP fill:#f9e2af,color:#0a0a14

@@ -1,0 +1,26 @@
+{
+  "enabled": true,
+  "sensitivity_px": 5,
+  "dwell_ms": 150,
+  "cooldown_ms": 1000,
+  "poll_ms": 30,
+  "corners": {
+    "top-left": {
+      "enabled": true,
+      "action": "alt_tab"
+    },
+    "top-right": {
+      "enabled": false,
+      "action": "task_view"
+    },
+    "bottom-left": {
+      "enabled": true,
+      "action": "telegram_chat",
+      "telegram_chat_id": "916637857"
+    },
+    "bottom-right": {
+      "enabled": false,
+      "action": "task_view"
+    }
+  }
+}

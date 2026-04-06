@@ -1,0 +1,93 @@
+{
+  "idle_seconds": 8,
+  "cooldown": 60,
+  "move_tolerance": 5,
+  "actions": [
+    {
+      "name": "Quick Note",
+      "emoji": "📝",
+      "color": "#89b4fa",
+      "type": "builtin",
+      "action": "quick_note"
+    },
+    {
+      "name": "What Am I Doing?",
+      "emoji": "🔍",
+      "color": "#94e2d5",
+      "type": "launch",
+      "action": "watcher.py"
+    },
+    {
+      "name": "Voice Sort",
+      "emoji": "🎙️",
+      "color": "#fab387",
+      "type": "launch",
+      "action": "voicesort.py"
+    },
+    {
+      "name": "Kidlin's Law",
+      "emoji": "🧠",
+      "color": "#cba6f7",
+      "type": "launch",
+      "action": "kidlin.py"
+    },
+    {
+      "name": "Linker",
+      "emoji": "🔗",
+      "color": "#b4befe",
+      "type": "launch",
+      "action": "linker.py"
+    },
+    {
+      "name": "Annoyances",
+      "emoji": "😤",
+      "color": "#f38ba8",
+      "type": "builtin",
+      "action": "annoyances"
+    },
+    {
+      "name": "Take a Break",
+      "emoji": "☕",
+      "color": "#a6e3a1",
+      "type": "builtin",
+      "action": "break_timer"
+    },
+    {
+      "name": "Stretch",
+      "emoji": "🧘",
+      "color": "#f9e2af",
+      "type": "builtin",
+      "action": "stretch"
+    },
+    {
+      "name": "Lock Screen",
+      "emoji": "🔒",
+      "color": "#5a5a80",
+      "type": "builtin",
+      "action": "lock_screen"
+    },
+    {
+      "name": "Hub",
+      "emoji": "🏠",
+      "color": "#b4befe",
+      "type": "launch",
+      "action": "hub.py"
+    },
+    {
+      "name": "Scribe",
+      "emoji": "✍️",
+      "color": "#89dceb",
+      "type": "launch",
+      "action": "scribe.py"
+    },
+    {
+      "name": "Dismiss",
+      "emoji": "👋",
+      "color": "#5a5a80",
+      "type": "builtin",
+      "action": "dismiss"
+    }
+  ],
+  "enabled": true,
+  "break_minutes": 5
+}

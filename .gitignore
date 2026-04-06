@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+*.pyo
+
+# Vosk models (large binary files)
+vosk-model-*/
+
+# Session data (user-specific, regenerated)
+replay_sessions/
+winddown_sessions/
+pause_notes/
+nacho_log/
+watcher_logs/
+voice_sorted/
+
+# Config files with API keys
+kidlin_config.json
+
+# Runtime state
+hub_config.json
+*.lnk
+
+# Rust build artifacts
+movein/target/
+
+# Compiled binary (large)
+movein.exe

@@ -1,0 +1,123 @@
+{
+  "tile_positions": {
+    "pythonw.exe|Voice Sort v1.1.0": {
+      "x": 77,
+      "y": 890
+    },
+    "python.exe|HUB": {
+      "x": 130,
+      "y": 822
+    },
+    "pythonw.exe|Annoyances v1.0.0": {
+      "x": 153,
+      "y": 787
+    },
+    "pythonw.exe|Kidlin's Law v1.0.0": {
+      "x": 135,
+      "y": 796
+    },
+    "pythonw.exe|Scribe v1.1.0": {
+      "x": 42,
+      "y": 870
+    },
+    "python.exe|Window Watcher": {
+      "x": 79,
+      "y": 871
+    },
+    "pythonw.exe|Lawrence: Move In v2.0.0": {
+      "x": 150,
+      "y": 776
+    },
+    "movein.exe|Lawrence: Move In v2.0.0": {
+      "x": 47,
+      "y": 62
+    },
+    "chrome.exe|My Hypothetical - Google Sheets - Google": {
+      "x": 1639,
+      "y": 172
+    },
+    "comet.exe|(12) YouTube - Comet": {
+      "x": 1568,
+      "y": 168
+    },
+    "claude.exe|Claude": {
+      "x": 367,
+      "y": 70
+    },
+    "msedge.exe|Browser and 20 more pages - Personal - M": {
+      "x": 1392,
+      "y": 202
+    },
+    "ShadowPCDisplay.exe|Shadow PC - Display": {
+      "x": 224,
+      "y": 65
+    },
+    "comet.exe|Inbox (12,030) - lozturner@gmail.com - G": {
+      "x": 1500,
+      "y": 228
+    },
+    "Antigravity.exe|Antigravity": {
+      "x": 516,
+      "y": 83
+    },
+    "comet.exe|Agent builder - New agent - OpenAI API -": {
+      "x": 1262,
+      "y": 196
+    },
+    "MicrosoftWhiteboard.exe|Microsoft Whiteboard": {
+      "x": 1156,
+      "y": 129
+    },
+    "comet.exe|App Development and Philosophy - Comet": {
+      "x": 440,
+      "y": 431
+    },
+    "explorer.exe|Desktop": {
+      "x": 528,
+      "y": 398
+    },
+    "PowerToys.QuickAccess.exe|PowerToys Quick Access (Preview)": {
+      "x": 416,
+      "y": 307
+    },
+    "TextInputHost.exe|Microsoft Text Input Application": {
+      "x": 886,
+      "y": 277
+    },
+    "chrome.exe|Google Gemini - Google Chrome": {
+      "x": 1411,
+      "y": 614
+    },
+    "msedge.exe|Elon Musk Sends A CLEAR And Powerful Mes": {
+      "x": 1445,
+      "y": 671
+    }
+  },
+  "zones": [
+    {
+      "x1": 1042,
+      "y1": 110,
+      "x2": 1758,
+      "y2": 383,
+      "name": "working",
+      "colour": "#89b4fa"
+    },
+    {
+      "x1": 1364,
+      "y1": 470,
+      "x2": 1683,
+      "y2": 826,
+      "name": "wirk#",
+      "colour": "#a6e3a1"
+    }
+  ],
+  "custom_groups": {
+    "python.exe": "1",
+    "msedge.exe": "wirk#",
+    "claude.exe": "1",
+    "explorer.exe": "Zone 1",
+    "chrome.exe": "wirk#",
+    "comet.exe": "working",
+    "MicrosoftWhiteboard.exe": "working"
+  }
+}

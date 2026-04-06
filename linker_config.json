@@ -1,0 +1,541 @@
+{
+  "categories": [
+    {
+      "name": "Pinned",
+      "color": "#f9e2af",
+      "phrases": [],
+      "_pinned_bucket": true
+    },
+    {
+      "name": "Transition",
+      "color": "#89b4fa",
+      "phrases": [
+        {
+          "text": "and then",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "so then",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "which leads to",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "that means",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "which means",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "so from there",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "at which point",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "and from that",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "moving on to",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "stepping into",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "Go check on",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "Bring back up",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "Open the thing to do with",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "add cmoond sections",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "Open program",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "Open Applications",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "Switch to",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "Listen to me",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "Bring it up",
+          "emoji": "",
+          "image": null
+        }
+      ]
+    },
+    {
+      "name": "Recall",
+      "color": "#cba6f7",
+      "phrases": [
+        {
+          "text": "that reminds me",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "going back to",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "speaking of which",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "on that note",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "related to that",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "circling back",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "which makes me think of",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "that connects to",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "bringing it back",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "on the subject of",
+          "emoji": "",
+          "image": null
+        }
+      ]
+    },
+    {
+      "name": "Clarify",
+      "color": "#94e2d5",
+      "phrases": [
+        {
+          "text": "what I mean is",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "the thing is",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "basically",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "to put it another way",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "more specifically",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "what I'm saying is",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "to be clear",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "let me rephrase",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "what that looks like is",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "the actual thing is",
+          "emoji": "",
+          "image": null
+        }
+      ]
+    },
+    {
+      "name": "Continue",
+      "color": "#a6e3a1",
+      "phrases": [
+        {
+          "text": "also",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "and another thing",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "not only that",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "on top of that",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "and as well",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "plus",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "additionally",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "and the other one",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "place the other",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "there's also",
+          "emoji": "",
+          "image": null
+        }
+      ]
+    },
+    {
+      "name": "Conclude",
+      "color": "#f9e2af",
+      "phrases": [
+        {
+          "text": "so basically",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "the point is",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "bottom line",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "the key thing is",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "what it comes down to",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "in short",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "the takeaway is",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "ultimately",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "what matters here is",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "to sum it up",
+          "emoji": "",
+          "image": null
+        }
+      ]
+    },
+    {
+      "name": "Contrast",
+      "color": "#fab387",
+      "phrases": [
+        {
+          "text": "but then",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "on the other hand",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "that said",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "although",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "however",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "whereas",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "at the same time",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "even so",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "despite that",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "the flip side is",
+          "emoji": "",
+          "image": null
+        }
+      ]
+    },
+    {
+      "name": "Example",
+      "color": "#f5c2e7",
+      "phrases": [
+        {
+          "text": "for example",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "like when",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "so imagine",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "to illustrate",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "take the case of",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "a classic example",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "picture this",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "like the time",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "same as",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "similar to",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "I've done it",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "What do I want to do?",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "What do I need to do?",
+          "emoji": "",
+          "image": null
+        }
+      ]
+    },
+    {
+      "name": "Casual",
+      "color": "#89dceb",
+      "phrases": [
+        {
+          "text": "oh and",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "anyway",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "right so",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "yeah and",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "so yeah",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "obviously",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "naturally",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "which, you know",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "it's like",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "kind of like",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "no one is coming for me",
+          "emoji": "",
+          "image": null
+        },
+        {
+          "text": "so much a fucking shame",
+          "emoji": "",
+          "image": null
+        }
+      ]
+    }
+  ],
+  "collapsed": [
+    "Recall"
+  ],
+  "pos": [
+    1613,
+    370
+  ],
+  "suffix": " ",
+  "size": [
+    521,
+    532
+  ],
+  "zoom": 1.5
+}

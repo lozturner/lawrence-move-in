@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lawrence: Move In</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+/* ── Reset & Base ── */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #0f0f1a;
+  --surface: #181825;
+  --surface2: #1e1e2e;
+  --overlay: #313244;
+  --text: #cdd6f4;
+  --subtext: #a6adc8;
+  --lavender: #b4befe;
+  --blue: #89b4fa;
+  --green: #a6e3a1;
+  --peach: #fab387;
+  --mauve: #cba6f7;
+  --red: #f38ba8;
+  --yellow: #f9e2af;
+  --teal: #94e2d5;
+  --sky: #89dceb;
+  --pink: #f5c2e7;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ── Three.js Canvas ── */
+#three-canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: -1;
+}
+
+/* ── Decorative Blobs ── */
+.deco-blob {
+  position: fixed;
+  pointer-events: none;
+  border-radius: 50%;
+  filter: blur(80px);
+  z-index: 0;
+}
+.blob-1 {
+  width: 500px; height: 500px;
+  background: var(--mauve);
+  opacity: 0.035;
+  top: -10%; left: -5%;
+  animation: blobDrift1 10s ease-in-out infinite alternate;
+}
+.blob-2 {
+  width: 400px; height: 400px;
+  background: var(--blue);
+  opacity: 0.03;
+  bottom: -8%; right: -3%;
+  animation: blobDrift2 12s ease-in-out infinite alternate;
+}
+.blob-3 {
+  width: 350px; height: 350px;
+  background: var(--peach);
+  opacity: 0.04;
+  top: 40%; right: 15%;
+  border-radius: 30% 70% 50% 50%;
+  animation: blobDrift3 9s ease-in-out infinite alternate;
+}
+.blob-4 {
+  width: 300px; height: 300px;
+  background: var(--teal);
+  opacity: 0.03;
+  bottom: 20%; left: 10%;
+  border-radius: 60% 40% 30% 70%;
+  animation: blobDrift1 11s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes blobDrift1 {
+  from { transform: translate(0, 0) rotate(0deg); }
+  to { transform: translate(40px, 30px) rotate(15deg); }
+}
+@keyframes blobDrift2 {
+  from { transform: translate(0, 0) rotate(0deg); }
+  to { transform: translate(-30px, -40px) rotate(-10deg); }
+}
+@keyframes blobDrift3 {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(20px, -25px) scale(1.1); }
+}
+
+/* ── Sections ── */
+.section {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+  pointer-events: none;
+  z-index: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+.section.active {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.section.exit-up {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+/* ── Section 0: Hero ── */
+.hero-title {
+  font-size: clamp(2.5rem, 7vw, 6rem);
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--lavender), var(--mauve));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-align: center;
+  line-height: 1.1;
+  margin-bottom: 1rem;
+}
+.hero-subtitle {
+  font-size: clamp(0.9rem, 2vw, 1.2rem);
+  color: var(--subtext);
+  max-width: 650px;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  border-right: 2px solid var(--lavender);
+  animation: typing 3s steps(70, end) forwards, blink 0.6s step-end infinite;
+  width: 0;
+  margin-bottom: 1.2rem;
+}
+@keyframes typing {
+  from { width: 0; }
+  to { width: 100%; }
+}
+@keyframes blink {
+  50% { border-color: transparent; }
+}
+.version-badge {
+  display: inline-block;
+  padding: 4px 16px;
+  border-radius: 20px;
+  background: var(--overlay);
+  color: var(--lavender);
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid rgba(180, 190, 254, 0.2);
+  margin-bottom: 2rem;
+}
+.down-arrow {
+  font-size: 1.8rem;
+  color: var(--lavender);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(8px); }
+}
+
+/* ── Section 1: Vision Cards ── */
+.vision-cards {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 1100px;
+}
+.glass-card {
+  flex: 1 1 280px;
+  max-width: 340px;
+  padding: 28px 24px;
+  background: rgba(24, 24, 37, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(205, 214, 244, 0.08);
+  border-radius: 16px;
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.glass-card.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.glass-card h3 {
+  font-size: 1.1rem;
+  margin-bottom: 12px;
+  color: var(--lavender);
+}
+.glass-card p {
+  font-size: 0.92rem;
+  color: var(--subtext);
+  line-height: 1.55;
+}
+
+/* ── Section 2: Suite ── */
+.suite-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 10px 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--overlay) transparent;
+}
+.applet-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--surface);
+  border-radius: 12px;
+  border-left: 4px solid var(--lavender);
+  opacity: 0;
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+.applet-card.from-left {
+  transform: translateX(-60px);
+}
+.applet-card.from-right {
+  transform: translateX(60px);
+}
+.applet-card.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+.applet-icon {
+  width: 42px; height: 42px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  color: var(--bg);
+}
+.applet-info { flex: 1; min-width: 0; }
+.applet-file {
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.78rem;
+  color: var(--subtext);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.py-badge {
+  font-size: 0.6rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--blue);
+  color: var(--bg);
+  font-weight: 700;
+  font-family: system-ui, sans-serif;
+}
+.applet-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.applet-desc {
+  font-size: 0.82rem;
+  color: var(--subtext);
+  line-height: 1.4;
+}
+
+/* ── Section 3: Architecture ── */
+.arch-container {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 1100px;
+  width: 100%;
+}
+.arch-panel {
+  flex: 1 1 480px;
+  max-width: 540px;
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 20px;
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.arch-panel.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.arch-panel h3 {
+  font-size: 0.95rem;
+  color: var(--lavender);
+  margin-bottom: 14px;
+  text-align: center;
+}
+.mermaid {
+  display: flex;
+  justify-content: center;
+}
+.mermaid svg { max-width: 100%; height: auto; }
+
+/* ── Section 4: Timeline ── */
+.timeline-container {
+  position: relative;
+  max-width: 700px;
+  width: 100%;
+  max-height: 78vh;
+  overflow-y: auto;
+  padding: 20px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--overlay) transparent;
+}
+.timeline-line {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--mauve);
+  transform: translateX(-50%);
+  opacity: 0.4;
+}
+.tl-item {
+  position: relative;
+  width: 45%;
+  padding: 14px 18px;
+  background: var(--surface);
+  border-radius: 12px;
+  margin-bottom: 20px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+.tl-item.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.tl-item.left { margin-left: 0; margin-right: auto; text-align: right; }
+.tl-item.right { margin-left: auto; margin-right: 0; text-align: left; }
+
+.tl-dot {
+  position: absolute;
+  top: 18px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 3px solid var(--bg);
+  z-index: 2;
+}
+.tl-item.left .tl-dot { right: -32px; }
+.tl-item.right .tl-dot { left: -32px; }
+.tl-item h4 {
+  font-size: 0.95rem;
+  margin-bottom: 4px;
+}
+.tl-item p {
+  font-size: 0.82rem;
+  color: var(--subtext);
+  line-height: 1.4;
+}
+
+/* ── Section 5: Closing ── */
+.closing-title {
+  font-size: clamp(2rem, 5vw, 4.5rem);
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--lavender), var(--mauve));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-align: center;
+  margin-bottom: 1rem;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.closing-title.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.closing-sub {
+  font-size: clamp(0.9rem, 2vw, 1.2rem);
+  color: var(--subtext);
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.6s ease 0.3s;
+}
+.closing-sub.visible { opacity: 1; }
+
+/* ── Nav Dots ── */
+.nav-dots {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  z-index: 100;
+}
+.nav-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--lavender);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.3s, transform 0.3s;
+  padding: 0;
+}
+.nav-dot.active {
+  background: var(--lavender);
+  transform: scale(1.3);
+}
+
+/* ── Resume Button ── */
+.resume-btn {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 24px;
+  background: var(--overlay);
+  color: var(--lavender);
+  border: 1px solid rgba(180, 190, 254, 0.3);
+  border-radius: 20px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+.resume-btn.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── Mobile ── */
+@media (max-width: 700px) {
+  .vision-cards { flex-direction: column; align-items: center; }
+  .glass-card { max-width: 100%; }
+  .arch-container { flex-direction: column; align-items: center; }
+  .arch-panel { max-width: 100%; }
+  .timeline-line { left: 20px; }
+  .tl-item { width: calc(100% - 50px); margin-left: 50px !important; text-align: left !important; }
+  .tl-item .tl-dot { left: -38px !important; right: auto !important; }
+}
+</style>
+</head>
+<body>
+
+<canvas id="three-canvas"></canvas>
+
+<div class="deco-blob blob-1"></div>
+<div class="deco-blob blob-2"></div>
+<div class="deco-blob blob-3"></div>
+<div class="deco-blob blob-4"></div>
+
+<!-- ════ Section 0: Hero ════ -->
+<div class="section" id="s0" data-duration="5000">
+  <div class="hero-title">Lawrence: Move In</div>
+  <div class="hero-subtitle">Portable software to overtake a Windows OS instead of suffering their flawed solutions</div>
+  <div class="version-badge">v2.0.0</div>
+  <div class="down-arrow">&#9662;</div>
+</div>
+
+<!-- ════ Section 1: Vision ════ -->
+<div class="section" id="s1" data-duration="8000">
+  <div class="vision-cards">
+    <div class="glass-card" data-delay="0">
+      <h3>The Problem</h3>
+      <p>It's 2026. AI sees everything. Yet Windows still can't focus a window without losing three others.</p>
+    </div>
+    <div class="glass-card" data-delay="400">
+      <h3>The Philosophy</h3>
+      <p>Don't fix Windows. Replace the bits that don't work. Portable. Personal. Powerful.</p>
+    </div>
+    <div class="glass-card" data-delay="800">
+      <h3>The Result</h3>
+      <p>8 applets. One suite. Zero compromise. Built in a single marathon session.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ════ Section 2: Suite ════ -->
+<div class="section" id="s2" data-duration="14000">
+  <div class="suite-grid" id="suite-grid"></div>
+</div>
+
+<!-- ════ Section 3: Architecture ════ -->
+<div class="section" id="s3" data-duration="10000">
+  <div class="arch-container">
+    <div class="arch-panel" id="arch-comp">
+      <h3>Component Map</h3>
+      <div class="mermaid" id="mermaid-comp">
+graph TD
+  HUB["hub.py<br/>Master Hub"]:::hub
+  N["niggly.py"]:::app
+  T["tiles.py"]:::app
+  L["launcher.py"]:::app
+  W["watcher.py"]:::app
+  V["voicesort.py"]:::app
+  K["kidlin.py"]:::app
+  S["scribe.py"]:::app
+  A["annoyances.py"]:::app
+  CFG["Shared Config<br/>JSON files"]:::cfg
+  WIN["win32 APIs"]:::sys
+  TRAY["System Tray"]:::sys
+  HUB --> N
+  HUB --> T
+  HUB --> L
+  HUB --> W
+  HUB --> V
+  HUB --> K
+  HUB --> S
+  HUB --> A
+  N --> CFG
+  T --> CFG
+  L --> CFG
+  N --> WIN
+  T --> WIN
+  HUB --> TRAY
+  classDef hub fill:#cba6f7,stroke:#cba6f7,color:#0f0f1a
+  classDef app fill:#89b4fa,stroke:#89b4fa,color:#0f0f1a
+  classDef cfg fill:#f9e2af,stroke:#f9e2af,color:#0f0f1a
+  classDef sys fill:#a6e3a1,stroke:#a6e3a1,color:#0f0f1a
+      </div>
+    </div>
+    <div class="arch-panel" id="arch-flow">
+      <h3>Data Flow</h3>
+      <div class="mermaid" id="mermaid-flow">
+graph LR
+  subgraph Inputs
+    MI["Mouse Idle"]:::inp
+    MIC["Microphone"]:::inp
+    CB["Clipboard"]:::inp
+    TXT["Typed Text"]:::inp
+    SS["Screenshots"]:::inp
+  end
+  subgraph Processing
+    CL["Claude API"]:::proc
+    VS["Vosk STT"]:::proc
+    WG["win32gui"]:::proc
+  end
+  subgraph Outputs
+    SF["Sorted Files"]:::out
+    DD["Deductions"]:::out
+    TR["Transcripts"]:::out
+    CP["Clarified Problems"]:::out
+  end
+  MI --> WG
+  MIC --> VS
+  CB --> CL
+  TXT --> CL
+  SS --> CL
+  WG --> DD
+  VS --> TR
+  CL --> SF
+  CL --> CP
+  classDef inp fill:#fab387,stroke:#fab387,color:#0f0f1a
+  classDef proc fill:#cba6f7,stroke:#cba6f7,color:#0f0f1a
+  classDef out fill:#a6e3a1,stroke:#a6e3a1,color:#0f0f1a
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ Section 4: Timeline ════ -->
+<div class="section" id="s4" data-duration="8000">
+  <div class="timeline-container" id="timeline-container">
+    <div class="timeline-line"></div>
+  </div>
+</div>
+
+<!-- ════ Section 5: Closing ════ -->
+<div class="section" id="s5" data-duration="5000">
+  <div class="closing-title" id="closing-title">Lawrence: Move In</div>
+  <div class="closing-sub" id="closing-sub">Built by Loz Turner. Powered by AI. Driven by ADHD.</div>
+</div>
+
+<!-- ════ Nav ════ -->
+<div class="nav-dots" id="nav-dots"></div>
+<button class="resume-btn" id="resume-btn">Resume Autoplay</button>
+
+<script>
+/* ═══════════════════════════════════════════
+   Data
+   ═══════════════════════════════════════════ */
+const applets = [
+  { file:'niggly.py', icon:'NI', bg:'#b4befe', title:'Focus Rules', desc:'When you focus one window, others auto-minimise. IFTTT-style cards to pair your windows.' },
+  { file:'tiles.py', icon:'TI', bg:'#89b4fa', title:'Window Tiles', desc:'Every window as a coloured tile. Grouped by category. Desktop canvas with ghost passthrough mode.' },
+  { file:'launcher.py', icon:'LA', bg:'#cba6f7', title:'Master Launcher', desc:'Gamification command centre. Glowing orbs. XP system. Level up by using your own tools.' },
+  { file:'watcher.py', icon:'WA', bg:'#a6e3a1', title:'Watcher', desc:'Detects when you stop. Screenshots your desktop. Claude Vision tells you what you\'re doing.' },
+  { file:'voicesort.py', icon:'VS', bg:'#fab387', title:'Voice Sort', desc:'Catches every Ctrl+C. AI categorises your voice notes into thoughts, tasks, ideas, rants.' },
+  { file:'kidlin.py', icon:'KL', bg:'#f38ba8', title:'Kidlin\'s Law', desc:'Type your messy thinking. Claude clarifies what the actual problem is.' },
+  { file:'scribe.py', icon:'SC', bg:'#94e2d5', title:'Scribe', desc:'Floating speech-to-text. Listens to your mic. Auto-tags what you\'re talking about.' },
+  { file:'annoyances.py', icon:'AN', bg:'#f9e2af', title:'Annoyances', desc:'Permanent checklist of things that piss you off about your computer. With workarounds.' },
+];
+
+const timelineData = [
+  { title:'The Frustration', desc:'Sick of Windows losing windows', color:'var(--red)' },
+  { title:'The Matrix', desc:'First attempt, too engineer-brained', color:'var(--blue)' },
+  { title:'IFTTT Cards', desc:'Natural language rules', color:'var(--green)' },
+  { title:'Window Tiles', desc:'Visual tiles with grouping', color:'var(--teal)' },
+  { title:'Desktop Canvas', desc:'Full-screen overlay with zones', color:'var(--sky)' },
+  { title:'Ghost Mode', desc:'Passthrough click-through at 10%', color:'var(--mauve)' },
+  { title:'The Rust Rewrite', desc:'Single 6.3MB binary', color:'var(--peach)' },
+  { title:'Voice & AI', desc:'Scribe, Watcher, Voice Sort, Kidlin', color:'var(--pink)' },
+  { title:'The Hub', desc:'Steam Deck launcher ties it all together', color:'var(--lavender)' },
+];
+
+/* ═══════════════════════════════════════════
+   Build DOM
+   ═══════════════════════════════════════════ */
+// Suite cards
+const suiteGrid = document.getElementById('suite-grid');
+applets.forEach((a, i) => {
+  const dir = i % 2 === 0 ? 'from-left' : 'from-right';
+  const card = document.createElement('div');
+  card.className = `applet-card ${dir}`;
+  card.dataset.delay = i * 1500;
+  card.style.borderLeftColor = a.bg;
+  card.innerHTML = `
+    <div class="applet-icon" style="background:${a.bg}">${a.icon}</div>
+    <div class="applet-info">
+      <div class="applet-file">${a.file} <span class="py-badge">PY</span></div>
+      <div class="applet-title">${a.title}</div>
+      <div class="applet-desc">${a.desc}</div>
+    </div>`;
+  suiteGrid.appendChild(card);
+});
+
+// Timeline
+const tlContainer = document.getElementById('timeline-container');
+timelineData.forEach((t, i) => {
+  const side = i % 2 === 0 ? 'left' : 'right';
+  const item = document.createElement('div');
+  item.className = `tl-item ${side}`;
+  item.dataset.delay = i * 700;
+  item.innerHTML = `
+    <div class="tl-dot" style="background:${t.color}"></div>
+    <h4 style="color:${t.color}">${t.title}</h4>
+    <p>${t.desc}</p>`;
+  tlContainer.appendChild(item);
+});
+
+// Nav dots
+const sections = document.querySelectorAll('.section');
+const navDots = document.getElementById('nav-dots');
+sections.forEach((_, i) => {
+  const dot = document.createElement('button');
+  dot.className = 'nav-dot';
+  dot.addEventListener('click', () => { pauseAutoplay(); goTo(i); });
+  navDots.appendChild(dot);
+});
+
+/* ═══════════════════════════════════════════
+   Section Navigation
+   ═══════════════════════════════════════════ */
+let current = -1;
+let autoplayTimer = null;
+let autoplayPaused = false;
+const resumeBtn = document.getElementById('resume-btn');
+
+function goTo(index) {
+  if (index < 0 || index >= sections.length || index === current) return;
+  const prev = current;
+  current = index;
+
+  if (prev >= 0) {
+    sections[prev].classList.remove('active');
+    sections[prev].classList.add('exit-up');
+    setTimeout(() => sections[prev].classList.remove('exit-up'), 400);
+  }
+
+  sections[current].classList.add('active');
+  document.querySelectorAll('.nav-dot').forEach((d, i) => d.classList.toggle('active', i === current));
+
+  animateSection(current);
+  scheduleNext();
+}
+
+function animateSection(idx) {
+  const sec = sections[idx];
+  // S1: vision cards
+  if (idx === 1) {
+    sec.querySelectorAll('.glass-card').forEach(c => {
+      const d = +c.dataset.delay;
+      setTimeout(() => c.classList.add('visible'), d);
+    });
+  }
+  // S2: applet cards
+  if (idx === 2) {
+    sec.querySelectorAll('.applet-card').forEach(c => {
+      const d = +c.dataset.delay;
+      setTimeout(() => c.classList.add('visible'), d);
+    });
+  }
+  // S3: arch panels
+  if (idx === 3) {
+    setTimeout(() => document.getElementById('arch-comp').classList.add('visible'), 200);
+    setTimeout(() => document.getElementById('arch-flow').classList.add('visible'), 600);
+  }
+  // S4: timeline
+  if (idx === 4) {
+    sec.querySelectorAll('.tl-item').forEach(t => {
+      const d = +t.dataset.delay;
+      setTimeout(() => t.classList.add('visible'), d);
+    });
+  }
+  // S5: closing
+  if (idx === 5) {
+    setTimeout(() => document.getElementById('closing-title').classList.add('visible'), 200);
+    setTimeout(() => document.getElementById('closing-sub').classList.add('visible'), 600);
+  }
+}
+
+function scheduleNext() {
+  clearTimeout(autoplayTimer);
+  if (autoplayPaused) return;
+  if (current >= sections.length - 1) return;
+  const dur = +sections[current].dataset.duration || 5000;
+  autoplayTimer = setTimeout(() => goTo(current + 1), dur);
+}
+
+function pauseAutoplay() {
+  autoplayPaused = true;
+  clearTimeout(autoplayTimer);
+  resumeBtn.classList.add('visible');
+}
+
+resumeBtn.addEventListener('click', () => {
+  autoplayPaused = false;
+  resumeBtn.classList.remove('visible');
+  scheduleNext();
+});
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { pauseAutoplay(); goTo(current + 1); }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { pauseAutoplay(); goTo(current - 1); }
+});
+
+// Wheel
+let wheelLock = false;
+document.addEventListener('wheel', e => {
+  if (wheelLock) return;
+  wheelLock = true;
+  setTimeout(() => wheelLock = false, 800);
+  pauseAutoplay();
+  goTo(current + (e.deltaY > 0 ? 1 : -1));
+}, { passive: true });
+
+/* ═══════════════════════════════════════════
+   Mermaid Init
+   ═══════════════════════════════════════════ */
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'dark',
+  themeVariables: {
+    darkMode: true,
+    primaryColor: '#cba6f7',
+    primaryTextColor: '#cdd6f4',
+    primaryBorderColor: '#313244',
+    lineColor: '#b4befe',
+    secondaryColor: '#89b4fa',
+    tertiaryColor: '#1e1e2e',
+    background: '#181825',
+    mainBkg: '#181825',
+    nodeBorder: '#313244',
+    clusterBkg: '#1e1e2e',
+    clusterBorder: '#313244',
+    titleColor: '#cdd6f4',
+    edgeLabelBackground: '#181825',
+    fontSize: '13px',
+  },
+  flowchart: { curve: 'basis', padding: 12 },
+});
+
+/* ═══════════════════════════════════════════
+   Three.js Background
+   ═══════════════════════════════════════════ */
+(function initThree() {
+  const canvas = document.getElementById('three-canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+  camera.position.set(0, 1, 6);
+
+  // Floor grid
+  const floorGeo = new THREE.PlaneGeometry(30, 30, 30, 30);
+  const floorMat = new THREE.MeshBasicMaterial({ color: 0x313244, wireframe: true, transparent: true, opacity: 0.12 });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -2;
+  scene.add(floor);
+
+  // Particles
+  const accentColours = [0xb4befe, 0x89b4fa, 0xa6e3a1, 0xfab387, 0xcba6f7, 0xf38ba8, 0xf9e2af, 0x94e2d5, 0x89dceb, 0xf5c2e7];
+  const particleCount = 150;
+  const pGeo = new THREE.BufferGeometry();
+  const positions = new Float32Array(particleCount * 3);
+  const colours = new Float32Array(particleCount * 3);
+  const velocities = [];
+
+  for (let i = 0; i < particleCount; i++) {
+    positions[i * 3] = (Math.random() - 0.5) * 20;
+    positions[i * 3 + 1] = Math.random() * 12 - 3;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 12 - 2;
+    const c = new THREE.Color(accentColours[i % accentColours.length]);
+    colours[i * 3] = c.r;
+    colours[i * 3 + 1] = c.g;
+    colours[i * 3 + 2] = c.b;
+    velocities.push(0.003 + Math.random() * 0.008);
+  }
+  pGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  pGeo.setAttribute('color', new THREE.BufferAttribute(colours, 3));
+
+  const pMat = new THREE.PointsMaterial({ size: 0.06, vertexColors: true, transparent: true, opacity: 0.7 });
+  const particles = new THREE.Points(pGeo, pMat);
+  scene.add(particles);
+
+  // Mouse
+  let mouseX = 0, mouseY = 0;
+  document.addEventListener('mousemove', e => {
+    mouseX = (e.clientX / window.innerWidth - 0.5) * 2;
+    mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+  });
+
+  // Resize
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // Animate
+  function tick() {
+    requestAnimationFrame(tick);
+
+    floor.rotation.z += 0.0005;
+
+    const pos = pGeo.attributes.position.array;
+    for (let i = 0; i < particleCount; i++) {
+      pos[i * 3 + 1] += velocities[i];
+      if (pos[i * 3 + 1] > 10) {
+        pos[i * 3 + 1] = -3;
+        pos[i * 3] = (Math.random() - 0.5) * 20;
+        pos[i * 3 + 2] = (Math.random() - 0.5) * 12 - 2;
+      }
+    }
+    pGeo.attributes.position.needsUpdate = true;
+
+    camera.position.x += (mouseX * 0.8 - camera.position.x) * 0.02;
+    camera.position.y += (1 - mouseY * 0.4 - camera.position.y) * 0.02;
+    camera.lookAt(0, 0, 0);
+
+    renderer.render(scene, camera);
+  }
+  tick();
+})();
+
+/* ═══════════════════════════════════════════
+   Start
+   ═══════════════════════════════════════════ */
+window.addEventListener('load', () => {
+  setTimeout(() => goTo(0), 300);
+});
+</script>
+</body>
+</html>

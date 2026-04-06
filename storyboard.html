@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lawrence: Move In — Why This Exists</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0f0f1a;--surface:#181825;--card:#1e1e2e;--overlay:#313244;
+  --text:#cdd6f4;--sub:#a6adc8;--dim:#585b70;
+  --lav:#b4befe;--blue:#89b4fa;--green:#a6e3a1;--peach:#fab387;
+  --mauve:#cba6f7;--red:#f38ba8;--yellow:#f9e2af;--teal:#94e2d5;
+  --sky:#89dceb;--pink:#f5c2e7;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;line-height:1.6;overflow-x:hidden}
+
+/* ── Hero ── */
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 20px;position:relative}
+.hero h1{font-size:clamp(2.5rem,7vw,5rem);font-weight:900;background:linear-gradient(135deg,var(--lav),var(--mauve));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1rem}
+.hero .subtitle{font-size:clamp(1rem,2.5vw,1.4rem);color:var(--sub);max-width:700px;margin-bottom:2rem}
+.hero .badge{display:inline-block;padding:6px 20px;border-radius:20px;background:var(--overlay);color:var(--lav);font-size:0.9rem;font-weight:600;border:1px solid rgba(180,190,254,0.2)}
+.scroll-hint{position:absolute;bottom:40px;color:var(--lav);font-size:1.5rem;animation:bob 1.5s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0);opacity:.4}50%{transform:translateY(10px);opacity:1}}
+
+/* ── Story cards ── */
+.stories{max-width:900px;margin:0 auto;padding:40px 20px 100px}
+.story{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:60px;border-radius:16px;overflow:hidden;opacity:0;transform:translateY(40px);transition:opacity .6s ease,transform .6s ease}
+.story.visible{opacity:1;transform:translateY(0)}
+.story:nth-child(even){direction:rtl}
+.story:nth-child(even)>*{direction:ltr}
+
+.problem{background:var(--surface);padding:32px 28px;position:relative}
+.problem::before{content:'THE PROBLEM';font-size:.7rem;font-weight:700;letter-spacing:.12em;color:var(--red);display:block;margin-bottom:12px}
+.problem h3{font-size:1.1rem;color:var(--red);margin-bottom:8px;font-weight:700}
+.problem p{font-size:.95rem;color:var(--sub);line-height:1.6}
+
+.solution{padding:32px 28px;position:relative}
+.solution::before{content:'THE SOLUTION';font-size:.7rem;font-weight:700;letter-spacing:.12em;display:block;margin-bottom:12px}
+.solution h3{font-size:1.1rem;margin-bottom:8px;font-weight:700}
+.solution p{font-size:.95rem;color:var(--sub);line-height:1.6}
+.solution .app-name{font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:.8rem;display:inline-block;padding:2px 10px;border-radius:6px;margin-top:10px;font-weight:700}
+
+/* ── Colour per app ── */
+.s-niggly .solution{background:rgba(166,227,161,.06)}.s-niggly .solution::before,.s-niggly .solution h3{color:var(--green)}.s-niggly .app-name{background:var(--green);color:var(--bg)}
+.s-tiles .solution{background:rgba(148,226,213,.06)}.s-tiles .solution::before,.s-tiles .solution h3{color:var(--teal)}.s-tiles .app-name{background:var(--teal);color:var(--bg)}
+.s-launcher .solution{background:rgba(203,166,247,.06)}.s-launcher .solution::before,.s-launcher .solution h3{color:var(--mauve)}.s-launcher .app-name{background:var(--mauve);color:var(--bg)}
+.s-watcher .solution{background:rgba(137,180,250,.06)}.s-watcher .solution::before,.s-watcher .solution h3{color:var(--blue)}.s-watcher .app-name{background:var(--blue);color:var(--bg)}
+.s-voicesort .solution{background:rgba(250,179,135,.06)}.s-voicesort .solution::before,.s-voicesort .solution h3{color:var(--peach)}.s-voicesort .app-name{background:var(--peach);color:var(--bg)}
+.s-kidlin .solution{background:rgba(249,226,175,.06)}.s-kidlin .solution::before,.s-kidlin .solution h3{color:var(--yellow)}.s-kidlin .app-name{background:var(--yellow);color:var(--bg)}
+.s-scribe .solution{background:rgba(137,220,235,.06)}.s-scribe .solution::before,.s-scribe .solution h3{color:var(--sky)}.s-scribe .app-name{background:var(--sky);color:var(--bg)}
+.s-annoyances .solution{background:rgba(243,139,168,.06)}.s-annoyances .solution::before,.s-annoyances .solution h3{color:var(--red)}.s-annoyances .app-name{background:var(--red);color:var(--bg)}
+.s-linker .solution{background:rgba(180,190,254,.06)}.s-linker .solution::before,.s-linker .solution h3{color:var(--lav)}.s-linker .app-name{background:var(--lav);color:var(--bg)}
+.s-mousepause .solution{background:rgba(245,194,231,.06)}.s-mousepause .solution::before,.s-mousepause .solution h3{color:var(--pink)}.s-mousepause .app-name{background:var(--pink);color:var(--bg)}
+.s-nacho .solution{background:rgba(203,166,247,.06)}.s-nacho .solution::before,.s-nacho .solution h3{color:var(--mauve)}.s-nacho .app-name{background:var(--mauve);color:var(--bg)}
+.s-replay .solution{background:rgba(137,180,250,.06)}.s-replay .solution::before,.s-replay .solution h3{color:var(--blue)}.s-replay .app-name{background:var(--blue);color:var(--bg)}
+.s-hub .solution{background:rgba(180,190,254,.06)}.s-hub .solution::before,.s-hub .solution h3{color:var(--lav)}.s-hub .app-name{background:var(--lav);color:var(--bg)}
+
+/* ── Closing ── */
+.closing{min-height:50vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px 20px;opacity:0;transform:translateY(30px);transition:opacity .6s ease,transform .6s ease}
+.closing.visible{opacity:1;transform:translateY(0)}
+.closing h2{font-size:clamp(1.8rem,5vw,3.5rem);font-weight:900;background:linear-gradient(135deg,var(--lav),var(--mauve));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1rem}
+.closing p{color:var(--sub);font-size:1.1rem;max-width:600px}
+.stat-row{display:flex;gap:32px;margin-top:32px;flex-wrap:wrap;justify-content:center}
+.stat{text-align:center}
+.stat .num{font-size:2.5rem;font-weight:900;color:var(--lav)}
+.stat .label{font-size:.85rem;color:var(--dim)}
+
+/* ── Mobile ── */
+@media(max-width:700px){
+  .story{grid-template-columns:1fr}
+  .story:nth-child(even){direction:ltr}
+}
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <h1>Lawrence: Move In</h1>
+  <p class="subtitle">Every tool in this suite exists because something was broken, annoying, or missing. This is why each one was built, what problem it solves, and what it does now.</p>
+  <span class="badge">Built by Loz Turner &middot; 2026</span>
+  <div class="scroll-hint">&#9662;</div>
+</section>
+
+<section class="stories" id="stories"></section>
+
+<section class="closing" id="closing">
+  <h2>One person's frustration.<br>Thirteen solutions.</h2>
+  <p>Every app was born from a real moment of "why doesn't this just work?" — then built in hours, not months. No committee. No spec. Just fix it.</p>
+  <div class="stat-row">
+    <div class="stat"><div class="num" id="app-count">0</div><div class="label">applets</div></div>
+    <div class="stat"><div class="num" id="line-count">0</div><div class="label">lines of Python</div></div>
+    <div class="stat"><div class="num">1</div><div class="label">developer</div></div>
+    <div class="stat"><div class="num">0</div><div class="label">committees</div></div>
+  </div>
+</section>
+
+<script>
+const stories = [
+  {
+    cls: "s-niggly",
+    problem_title: "Focus one window, lose three others",
+    problem: "Windows has no concept of window pairing. Open Chrome, and your terminal vanishes behind six other windows. Every Alt+Tab is a lottery. You spend more time finding windows than using them.",
+    solution_title: "IF/THEN focus rules",
+    solution: "Natural language rules: 'When I focus VS Code, minimise Chrome and Slack.' Cards you can drag and pair. The OS polls focus every 150ms and enforces your rules silently.",
+    app: "niggly.py", label: "Focus Rules"
+  },
+  {
+    cls: "s-tiles",
+    problem_title: "No visual map of what's open",
+    problem: "The taskbar shows tiny icons. You can't see at a glance which windows are open, what category they belong to, or how to get to the one you need. The desktop is invisible under a pile.",
+    solution_title: "Every window as a coloured tile",
+    solution: "A sidebar where every open window appears as a tile, colour-coded by category. Click one to bring it forward. Ghost mode overlays the desktop at 10% opacity with click-through passthrough.",
+    app: "tiles.py", label: "Window Tiles"
+  },
+  {
+    cls: "s-launcher",
+    problem_title: "No motivation to use your own tools",
+    problem: "You build productivity tools and then forget to use them. There's no feedback loop. No reward. No sense of progress. The tools sit there, cold and unused.",
+    solution_title: "Gamification command centre",
+    solution: "Glowing orbs. XP system. Level up by launching and using your own tools. A master launcher that makes using your software feel like playing a game. Progress bars and unlocks.",
+    app: "launcher.py", label: "Master Launcher"
+  },
+  {
+    cls: "s-watcher",
+    problem_title: "You zone out and forget what you were doing",
+    problem: "ADHD means you sit down, start working, then 40 minutes later you're staring at a blank screen with no memory of what you were supposed to be doing. Nobody's watching. Nobody reminds you.",
+    solution_title: "AI sees your screen when you pause",
+    solution: "Detects when the mouse stops moving for 3 seconds. Screenshots the desktop. Sends it to Claude Vision which reads what's actually on screen and tells you: 'You were editing watcher.py in VS Code with a Chrome tab open on Stack Overflow about threading.'",
+    app: "watcher.py", label: "Watcher"
+  },
+  {
+    cls: "s-voicesort",
+    problem_title: "Thoughts vanish the moment you think them",
+    problem: "You copy something to clipboard. You have a voice note. You have a random thought. It all disappears into the void. Nothing is categorised, nothing is findable, nothing is saved where it should be.",
+    solution_title: "AI categorises every thought",
+    solution: "Catches every Ctrl+C. Listens to voice. Claude categorises each piece into thought, task, idea, rant, observation, instruction — and files it into the right markdown document automatically.",
+    app: "voicesort.py", label: "Voice Sort"
+  },
+  {
+    cls: "s-kidlin",
+    problem_title: "You can't articulate what the actual problem is",
+    problem: "Kidlin's Law: if you can write the problem down clearly, it's half solved. But ADHD brains produce messy, tangled, emotional problem descriptions. The real issue is buried under noise.",
+    solution_title: "AI clarifies what you actually mean",
+    solution: "Type your messy thinking into a box. Claude strips the noise and returns: 'The actual problem is...' — a clean, actionable problem statement you can work with or share.",
+    app: "kidlin.py", label: "Kidlin's Law"
+  },
+  {
+    cls: "s-scribe",
+    problem_title: "You talk faster than you type",
+    problem: "Ideas flow when you speak, not when you type. But speech-to-text tools are buried in menus, need internet, and lose what you said. By the time you set it up, you've forgotten the thought.",
+    solution_title: "Floating always-on speech-to-text",
+    solution: "A tiny floating panel. Hit the hotkey, talk. Vosk transcribes offline in real time. Auto-tags what you're talking about. Send it to Voice Sort or copy it anywhere.",
+    app: "scribe.py", label: "Scribe"
+  },
+  {
+    cls: "s-annoyances",
+    problem_title: "Computer annoyances pile up and never get fixed",
+    problem: "That thing where Windows Update restarts at 3am. That font rendering bug. That keyboard shortcut that stopped working. You notice it, grumble, and forget. It never gets logged, never gets solved.",
+    solution_title: "Permanent annoyance log with AI workarounds",
+    solution: "A persistent checklist of everything that pisses you off about your computer. Text, voice, or screenshot input. Claude suggests workarounds. Exports to markdown. The list never dies.",
+    app: "annoyances.py", label: "Annoyances"
+  },
+  {
+    cls: "s-linker",
+    problem_title: "You use the same connector phrases but can never find them",
+    problem: "When thinking out loud or dictating, you use the same bridges between ideas: 'and then', 'the thing is', 'going back to'. But you can't remember them when you need them, and STT gets them wrong.",
+    solution_title: "Clickable phrase tiles with multi-select",
+    solution: "A tile board of connector phrases organised by category. Click one, it's on your clipboard. Multi-select mode to chain several together. Zoom to read them. AI suggests new ones based on what's on your screen.",
+    app: "linker.py", label: "Linker"
+  },
+  {
+    cls: "s-mousepause",
+    problem_title: "You sit back from the computer with nothing to do",
+    problem: "You lean back. The screen is still there. You've paused but there's no bridge between 'I stopped working' and 'what should I do now?' The computer doesn't notice you've stopped.",
+    solution_title: "Action panel when you pause",
+    solution: "Detects mouse idle. A grid of actions appears: quick note, voice memo, stretch, break timer, launch any app, ask AI a question. Click to lock it. Add your own custom actions. It knows you stopped.",
+    app: "mouse_pause.py", label: "Mouse Pause"
+  },
+  {
+    cls: "s-nacho",
+    problem_title: "No one to talk to when you're stuck",
+    problem: "You're alone at the desk. ADHD brain is spinning. You need to talk it out but there's nobody there. Typing into ChatGPT is too slow and clinical. You need a conversation, not a search engine.",
+    solution_title: "Voice AI that talks back",
+    solution: "NACHO greets you by name. You speak, it listens (offline Vosk STT). Claude responds — spoken aloud and shown in large text. Every sentence is a clickable hyperlink you can send to email, Telegram, Claude Code, or save as a note.",
+    app: "nacho.py", label: "NACHO"
+  },
+  {
+    cls: "s-replay",
+    problem_title: "You can't remember what you did an hour ago",
+    problem: "Someone asks 'what have you been working on?' and you genuinely don't know. ADHD time blindness means the last two hours are a blur. There's no record, no trail, no proof.",
+    solution_title: "Record everything, replay it",
+    solution: "Screenshots every 10 seconds. Mouse trail. Active window log. Clipboard history. Process list. File changes. Scrub through a timeline with a slider. Red mouse trail overlaid on screenshots. Export a markdown report.",
+    app: "replay.py", label: "Replay"
+  },
+  {
+    cls: "s-hub",
+    problem_title: "Too many applets, no single place to manage them",
+    problem: "You've built 12 tools. They're all separate scripts. You can't see which ones are running. Launching them means finding the right file. Restarting means killing processes by hand.",
+    solution_title: "Steam Deck-style tile launcher",
+    solution: "A floating hub with a tile for every applet. Green dot = running, grey = stopped. Click to launch. Triple-click to hard reset. Right-click to kill. 'Launch All' button at the bottom. One place for everything.",
+    app: "hub.py", label: "Hub"
+  },
+];
+
+// Build DOM
+const container = document.getElementById('stories');
+stories.forEach((s, i) => {
+  const div = document.createElement('div');
+  div.className = `story ${s.cls}`;
+  div.innerHTML = `
+    <div class="problem">
+      <h3>${s.problem_title}</h3>
+      <p>${s.problem}</p>
+    </div>
+    <div class="solution">
+      <h3>${s.solution_title}</h3>
+      <p>${s.solution}</p>
+      <span class="app-name">${s.app} &mdash; ${s.label}</span>
+    </div>`;
+  container.appendChild(div);
+});
+
+// Scroll animations
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) e.target.classList.add('visible');
+  });
+}, { threshold: 0.15 });
+
+document.querySelectorAll('.story, .closing').forEach(el => observer.observe(el));
+
+// Animate stats
+function animateNum(el, target, ms) {
+  let start = 0;
+  const step = target / (ms / 16);
+  function tick() {
+    start += step;
+    if (start >= target) { el.textContent = target; return; }
+    el.textContent = Math.round(start);
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+const closingObs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+      animateNum(document.getElementById('app-count'), 13, 1200);
+      animateNum(document.getElementById('line-count'), 8500, 1800);
+      closingObs.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.3 });
+
+closingObs.observe(document.getElementById('closing'));
+</script>
+</body>
+</html>

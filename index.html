@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lawrence: Move In</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --bg:        #0f0f1a;
+            --surface:   #181825;
+            --surface2:  #1e1e2e;
+            --overlay:   #313244;
+            --text:      #cdd6f4;
+            --subtext:   #a6adc8;
+            --lavender:  #b4befe;
+            --blue:      #89b4fa;
+            --sapphire:  #74c7ec;
+            --green:     #a6e3a1;
+            --peach:     #fab387;
+            --mauve:     #cba6f7;
+            --red:       #f38ba8;
+            --yellow:    #f9e2af;
+            --teal:      #94e2d5;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 3rem 2rem 4rem;
+        }
+
+        /* ---- Header ---- */
+        header {
+            text-align: center;
+            margin-bottom: 3.5rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--overlay);
+        }
+
+        header h1 {
+            font-size: 2.4rem;
+            font-weight: 700;
+            color: var(--lavender);
+            letter-spacing: -0.5px;
+            margin-bottom: 0.6rem;
+        }
+
+        header p {
+            font-size: 1.05rem;
+            color: var(--subtext);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* ---- Section titles ---- */
+        h2 {
+            font-size: 1.35rem;
+            color: var(--blue);
+            margin-bottom: 1.2rem;
+            font-weight: 600;
+        }
+
+        section { margin-bottom: 3rem; }
+
+        /* ---- Applet cards ---- */
+        .cards {
+            display: grid;
+            gap: 1.2rem;
+        }
+
+        .card {
+            background: var(--surface);
+            border-radius: 10px;
+            padding: 1.5rem 1.6rem;
+            border-left: 4px solid;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+        }
+
+        .card.accent-mauve   { border-color: var(--mauve); }
+        .card.accent-teal    { border-color: var(--teal); }
+        .card.accent-peach   { border-color: var(--peach); }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-filename {
+            font-family: 'Cascadia Code', 'Consolas', monospace;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .card-tray-badge {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.15rem 0.45rem;
+            border-radius: 4px;
+            background: var(--overlay);
+            color: var(--subtext);
+            letter-spacing: 0.5px;
+        }
+
+        .card-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 0.35rem;
+        }
+
+        .card.accent-mauve .card-title { color: var(--mauve); }
+        .card.accent-teal  .card-title { color: var(--teal); }
+        .card.accent-peach .card-title { color: var(--peach); }
+
+        .card-desc {
+            font-size: 0.9rem;
+            color: var(--subtext);
+            line-height: 1.55;
+        }
+
+        /* ---- Mermaid diagram ---- */
+        .diagram-wrap {
+            background: var(--surface);
+            border-radius: 10px;
+            padding: 2rem;
+            overflow-x: auto;
+        }
+
+        .diagram-wrap .mermaid {
+            display: flex;
+            justify-content: center;
+        }
+
+        /* ---- Config table ---- */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--surface);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        thead th {
+            text-align: left;
+            padding: 0.85rem 1.2rem;
+            background: var(--surface2);
+            color: var(--lavender);
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+
+        tbody td {
+            padding: 0.8rem 1.2rem;
+            border-top: 1px solid var(--overlay);
+            font-size: 0.9rem;
+        }
+
+        tbody td:first-child {
+            font-family: 'Cascadia Code', 'Consolas', monospace;
+            color: var(--yellow);
+            white-space: nowrap;
+        }
+
+        tbody td:last-child {
+            color: var(--subtext);
+        }
+
+        /* ---- Code / run section ---- */
+        .run-block {
+            background: var(--surface);
+            border-radius: 10px;
+            padding: 1.5rem 1.6rem;
+        }
+
+        .run-block p {
+            font-size: 0.9rem;
+            color: var(--subtext);
+            margin-bottom: 0.8rem;
+        }
+
+        pre {
+            background: var(--bg);
+            border: 1px solid var(--overlay);
+            border-radius: 8px;
+            padding: 1rem 1.2rem;
+            font-family: 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.85rem;
+            color: var(--green);
+            overflow-x: auto;
+            margin-bottom: 0.6rem;
+            line-height: 1.7;
+        }
+
+        pre:last-child { margin-bottom: 0; }
+
+        .comment { color: var(--overlay); }
+
+        /* ---- Footer ---- */
+        footer {
+            text-align: center;
+            padding-top: 2rem;
+            border-top: 1px solid var(--overlay);
+            color: var(--overlay);
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <!-- Header -->
+        <header>
+            <h1>Lawrence: Move In</h1>
+            <p>Portable software to overtake a Windows OS instead of suffering their flawed solutions</p>
+        </header>
+
+        <!-- Applet Inventory -->
+        <section>
+            <h2>Applet Inventory</h2>
+            <div class="cards">
+
+                <div class="card accent-mauve">
+                    <div class="card-header">
+                        <span class="card-filename">niggly.py</span>
+                        <span class="card-tray-badge">NM</span>
+                    </div>
+                    <div class="card-title">Window Focus Rules (IF/THEN)</div>
+                    <div class="card-desc">
+                        When you focus one window, specified others auto-minimise. IFTTT-style card UI
+                        for defining rules. Lives in the system tray as <strong>NM</strong>.
+                    </div>
+                </div>
+
+                <div class="card accent-teal">
+                    <div class="card-header">
+                        <span class="card-filename">tiles.py</span>
+                        <span class="card-tray-badge">TL</span>
+                    </div>
+                    <div class="card-title">Window Tiles + Desktop Canvas</div>
+                    <div class="card-desc">
+                        All active windows rendered as tiny coloured tiles, grouped by category.
+                        Two modes: compact sidebar list, or full-screen desktop canvas with
+                        free-placement and drawable zones. Passthrough ghost mode drops to 10%
+                        opacity for click-through. System tray icon <strong>TL</strong>.
+                    </div>
+                </div>
+
+                <div class="card accent-peach">
+                    <div class="card-header">
+                        <span class="card-filename">launcher.py</span>
+                        <span class="card-tray-badge">MI</span>
+                    </div>
+                    <div class="card-title">Master Suite Launcher</div>
+                    <div class="card-desc">
+                        Gamification-style command centre. Each applet shown as a glowing orb —
+                        launch individually or all at once. Tracks XP, levels, and launch stats.
+                        System tray icon <strong>MI</strong>.
+                    </div>
+                </div>
+
+                <div class="card accent-peach" style="border-color: var(--yellow);">
+                    <div class="card-header">
+                        <span class="card-filename">launch_all.pyw</span>
+                    </div>
+                    <div class="card-title">Auto-launcher (Silent)</div>
+                    <div class="card-desc">
+                        Silent launcher for all applets. Drop a shortcut into the Windows Startup
+                        folder and everything fires on login — no console window, no fuss.
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Architecture Diagram -->
+        <section>
+            <h2>Architecture</h2>
+            <div class="diagram-wrap">
+                <pre class="mermaid">
+graph TD
+    LAUNCH["launch_all.pyw<br/><i>Auto-launcher</i>"]
+    LAUNCHER["launcher.py<br/><i>Master Suite Launcher</i>"]
+    NIGGLY["niggly.py<br/><i>Window Focus Rules</i>"]
+    TILES["tiles.py<br/><i>Window Tiles</i>"]
+
+    LAUNCHER_CFG[("launcher_config.json")]
+    NIGGLY_CFG[("niggly_config.json")]
+    TILES_CFG[("tiles_config.json")]
+    CANVAS_CFG[("canvas_config.json")]
+
+    TRAY_MI(["System Tray: MI"])
+    TRAY_NM(["System Tray: NM"])
+    TRAY_TL(["System Tray: TL"])
+
+    SIDEBAR["TilesWindow<br/><i>Sidebar mode</i>"]
+    CANVAS["DesktopCanvas<br/><i>Full-screen mode</i>"]
+    GHOST["Passthrough Mode<br/><i>WS_EX_TRANSPARENT</i>"]
+
+    WIN32["win32gui / win32api<br/><i>Window management</i>"]
+    PYSTRAY["pystray<br/><i>Tray icons</i>"]
+
+    LAUNCH -->|starts| LAUNCHER
+    LAUNCH -->|starts| NIGGLY
+    LAUNCH -->|starts| TILES
+
+    LAUNCHER -->|launches &amp; monitors| NIGGLY
+    LAUNCHER -->|launches &amp; monitors| TILES
+    LAUNCHER -->|reads/writes| LAUNCHER_CFG
+    LAUNCHER -->|icon| TRAY_MI
+    TRAY_MI -.->|via| PYSTRAY
+
+    NIGGLY -->|reads| NIGGLY_CFG
+    NIGGLY -->|monitors focus &amp; applies rules| WIN32
+    NIGGLY -->|icon| TRAY_NM
+    TRAY_NM -.->|via| PYSTRAY
+
+    TILES -->|reads/writes| TILES_CFG
+    TILES -->|reads/writes| CANVAS_CFG
+    TILES -->|icon| TRAY_TL
+    TRAY_TL -.->|via| PYSTRAY
+    TILES --> SIDEBAR
+    TILES --> CANVAS
+    CANVAS --> GHOST
+    TILES -->|enumerates windows| WIN32
+
+    style LAUNCH fill:#fab387,stroke:#fab387,color:#0f0f1a
+    style LAUNCHER fill:#cba6f7,stroke:#f5c2e7,color:#0f0f1a
+    style NIGGLY fill:#cba6f7,stroke:#cba6f7,color:#0f0f1a
+    style TILES fill:#94e2d5,stroke:#94e2d5,color:#0f0f1a
+    style LAUNCHER_CFG fill:#f9e2af,stroke:#f9e2af,color:#0f0f1a
+    style NIGGLY_CFG fill:#f9e2af,stroke:#f9e2af,color:#0f0f1a
+    style TILES_CFG fill:#f9e2af,stroke:#f9e2af,color:#0f0f1a
+    style CANVAS_CFG fill:#f9e2af,stroke:#f9e2af,color:#0f0f1a
+    style WIN32 fill:#313244,stroke:#89b4fa,color:#cdd6f4
+    style PYSTRAY fill:#313244,stroke:#89b4fa,color:#cdd6f4
+    style SIDEBAR fill:#1e1e2e,stroke:#94e2d5,color:#94e2d5
+    style CANVAS fill:#1e1e2e,stroke:#94e2d5,color:#94e2d5
+    style GHOST fill:#1e1e2e,stroke:#f38ba8,color:#f38ba8
+    style TRAY_MI fill:#1e1e2e,stroke:#f5c2e7,color:#f5c2e7
+    style TRAY_NM fill:#1e1e2e,stroke:#cba6f7,color:#cba6f7
+    style TRAY_TL fill:#1e1e2e,stroke:#94e2d5,color:#94e2d5
+                </pre>
+            </div>
+        </section>
+
+        <!-- Config Files -->
+        <section>
+            <h2>Config Files</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Stores</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>niggly_config.json</td>
+                        <td>IF/THEN focus rules — which windows to auto-minimise when a target window gains focus</td>
+                    </tr>
+                    <tr>
+                        <td>tiles_config.json</td>
+                        <td>Tile colours, category groupings, sidebar layout preferences, and window filter rules</td>
+                    </tr>
+                    <tr>
+                        <td>canvas_config.json</td>
+                        <td>Desktop canvas free-placement positions, drawable zone definitions, and ghost-mode opacity settings</td>
+                    </tr>
+                    <tr>
+                        <td>launcher_config.json</td>
+                        <td>Launch counts per applet, total launches, XP points, and current level</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- How to Run -->
+        <section>
+            <h2>How to Run</h2>
+            <div class="run-block">
+                <p>Run everything at once (silent, no console):</p>
+<pre><span class="comment"># Double-click or add a shortcut to shell:startup</span>
+pythonw launch_all.pyw</pre>
+
+                <p>Run individual applets:</p>
+<pre><span class="comment"># Master Suite Launcher (gamification UI)</span>
+python launcher.py
+
+<span class="comment"># Window Focus Rules</span>
+python niggly.py
+
+<span class="comment"># Window Tiles + Desktop Canvas</span>
+python tiles.py</pre>
+
+                <p>Dependencies:</p>
+<pre>pip install pywin32 pystray Pillow</pre>
+            </div>
+        </section>
+
+        <footer>Lawrence: Move In &mdash; niggly_machine</footer>
+
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+                darkMode: true,
+                background: '#0f0f1a',
+                primaryColor: '#1e1e2e',
+                primaryTextColor: '#cdd6f4',
+                lineColor: '#6c7086',
+                fontSize: '14px'
+            }
+        });
+    </script>
+</body>
+</html>
