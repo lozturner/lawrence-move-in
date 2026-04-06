@@ -14,11 +14,16 @@ Level 3 — FULL SUITE (everything)
   + Watcher, NACHO, Replay, Capture, Winddown, Annoyances, Launcher
   ~320MB RAM. Full body double. Recording, AI, voice, session management.
 
+Level 4 — GALLERY (visual picker)
+  All 18 apps shown as cards with thumbnails, problem/solution, checkboxes.
+  Pick exactly what you want. Run selected.
+
 Usage:
   python launch_level.py          → interactive picker
   python launch_level.py 1        → launch level 1
   python launch_level.py 2        → launch level 2
   python launch_level.py 3        → launch level 3
+  python launch_level.py 4        → gallery picker
 """
 __version__ = "1.0.0"
 
@@ -203,7 +208,26 @@ def show_picker():
             widget.bind("<Leave>", _leave)
             widget.bind("<Button-1>", _click)
 
-    tk.Label(root, text="Level 2 includes Level 1. Level 3 includes everything.",
+    # Level 4 button
+    f4 = tk.Frame(root, bg="#1a1a3a", padx=16, pady=12, cursor="hand2")
+    f4.pack(fill="x", padx=20, pady=6)
+    hdr4 = tk.Frame(f4, bg="#1a1a3a")
+    hdr4.pack(fill="x")
+    tk.Label(hdr4, text="Level 4", font=("Consolas",12,"bold"),
+             fg="#f9e2af", bg="#1a1a3a").pack(side="left")
+    tk.Label(hdr4, text="Gallery", font=("Segoe UI",11,"bold"),
+             fg="#cdd6f4", bg="#1a1a3a", padx=8).pack(side="left")
+    tk.Label(hdr4, text="Visual Picker", font=("Segoe UI",9),
+             fg="#5a5a80", bg="#1a1a3a").pack(side="left")
+    tk.Label(f4, text="Full visual gallery with thumbnails and problem/solution cards. Pick exactly what you need.",
+             font=("Segoe UI",9), fg="#a6adc8", bg="#1a1a3a", anchor="w").pack(fill="x", pady=(4,2))
+    def _click4(e):
+        root.destroy()
+        subprocess.Popen([sys.executable, str(SCRIPT_DIR / "launch_gallery.py")], cwd=str(SCRIPT_DIR))
+    for w4 in [f4, hdr4] + list(f4.winfo_children()) + list(hdr4.winfo_children()):
+        w4.bind("<Button-1>", _click4)
+
+    tk.Label(root, text="Level 2 includes Level 1. Level 3 includes everything. Level 4 lets you pick.",
              font=("Segoe UI",8), fg="#5a5a80", bg="#0a0a14").pack(pady=(8,0))
 
     root.mainloop()
@@ -215,9 +239,12 @@ if __name__ == "__main__":
             level = int(sys.argv[1])
             if level in (1, 2, 3):
                 launch_level(level)
+            elif level == 4:
+                subprocess.Popen([sys.executable, str(SCRIPT_DIR / "launch_gallery.py")],
+                                 cwd=str(SCRIPT_DIR))
             else:
-                print("Usage: python launch_level.py [1|2|3]")
+                print("Usage: python launch_level.py [1|2|3|4]")
         except ValueError:
-            print("Usage: python launch_level.py [1|2|3]")
+            print("Usage: python launch_level.py [1|2|3|4]")
     else:
         show_picker()

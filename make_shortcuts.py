@@ -32,6 +32,11 @@ SHORTCUTS = [
     ("Lawrence — Mouse Pause",  "mouse_pause.py",  "Idle action panel"),
     ("Lawrence — NACHO",        "nacho.py",        "Loz AI voice assistant"),
     ("Lawrence — Kill All",     "kill_all.py",     "Kill every applet"),
+    ("Lawrence — Replay",       "replay.py",       "Record and replay desktop sessions"),
+    ("Lawrence — Capture",      "capture.py",      "Screenshot + notes brain dump"),
+    ("Lawrence — Winddown",     "winddown.py",     "Session wind-down + resume"),
+    ("Lawrence — Nag",          "nag.py",          "Timetable nagger"),
+    ("Lawrence — Level 4 Gallery", "launch_gallery.py", "Visual gallery — pick apps with thumbnails"),
 ]
 
 shell = win32com.client.Dispatch("WScript.Shell")
