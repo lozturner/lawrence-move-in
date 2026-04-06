@@ -1,0 +1,34 @@
+{
+  "apps": [
+    {
+      "name": "File Explorer",
+      "icon": "explorer.ico",
+      "path": "explorer.exe",
+      "args": ""
+    },
+    {
+      "name": "Microsoft Edge",
+      "icon": "edge.ico",
+      "path": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+      "args": ""
+    },
+    {
+      "name": "Google Chrome",
+      "icon": "chrome.ico",
+      "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "args": ""
+    },
+    {
+      "name": "Perplexity",
+      "icon": "perplexity.ico",
+      "path": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "args": "--app=https://perplexity.ai"
+    },
+    {
+      "name": "Comet Browser",
+      "icon": "comet.ico",
+      "path": "C:\\Users\\123\\AppData\\Local\\Perplexity\\Comet\\Application\\comet.exe",
+      "args": ""
+    }
+  ]
+}
