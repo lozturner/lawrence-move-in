@@ -290,8 +290,9 @@ class MousePauseApp:
 
         p.bind("<Button-3>", self._settings_menu)
 
-        # Fade in
+        # Fade in, then auto-start hands-free voice listener after 2s
         self._fade_in(p, 0.0)
+        p.after(2000, self._auto_start_hands_free)
 
     def _make_tile(self, parent, act, size, row, col):
         name  = act.get("name","?")
@@ -743,6 +744,11 @@ class MousePauseApp:
     def _act_lock_screen(self):
         import ctypes
         ctypes.windll.user32.LockWorkStation()
+
+    def _auto_start_hands_free(self):
+        """Auto-start hands free listener when panel appears."""
+        if self._panel_up:
+            self._act_hands_free()
 
     # ── Hands Free voice listener ─────────────────────────────────────────
     def _act_hands_free(self):

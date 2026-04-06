@@ -83,17 +83,25 @@ def launch_app(app):
     except Exception as e:
         print(f"Failed to launch {app['name']}: {e}")
 
+def _make_launcher(app):
+    """Return a 2-arg callback that launches the app."""
+    def _fn(icon, item):
+        launch_app(app)
+    return _fn
+
+def _make_quitter():
+    def _fn(icon, item):
+        icon.stop()
+    return _fn
+
 def create_tray(app):
     """Create one tray icon for one app."""
     icon_img = make_icon(app["abbrev"], app["color"])
 
     menu = pystray.Menu(
-        pystray.MenuItem(f"Open {app['name']}",
-            lambda icon, item, a=app: launch_app(a),
-            default=True),
+        pystray.MenuItem(f"Open {app['name']}", _make_launcher(app)),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Quit this icon",
-            lambda icon, item: icon.stop()),
+        pystray.MenuItem("Quit this icon", _make_quitter()),
     )
 
     icon = pystray.Icon(
