@@ -824,7 +824,7 @@ class MousePauseApp:
         threading.Thread(target=self._hf_wake_loop, daemon=True).start()
 
     def _hf_wake_loop(self):
-        """Every 3s: open mic for 2s, listen for 'yes'. If heard, start transcription."""
+        """Poll for wake word 'yes'. If heard, record 10s of speech. Long gaps between polls."""
         from vosk import Model, KaldiRecognizer
         import sounddevice as sd
 
@@ -840,28 +840,37 @@ class MousePauseApp:
 
         while self._hf_alive:
             if self._hf_paused:
-                time.sleep(1)
+                time.sleep(2)
                 continue
 
+            n = len(self._hf_segments)
+            self.root.after(0, lambda n=n: self._hf_question.config(
+                text=f'🎤 Say "yes" when you want to speak. ({n} segments so far)'))
             self.root.after(0, lambda: self._hf_status.config(
-                text="🔇 listening for 'yes'…", fg=YELLOW))
-            self.root.after(0, lambda: self._hf_question.config(
-                text='Say "yes" to record, or stay silent…'))
+                text="waiting for 'yes'…", fg=DIM))
 
-            # Listen for 2 seconds for wake word
+            # Wait 5 seconds of silence before checking mic
+            for _ in range(10):
+                if not self._hf_alive: return
+                time.sleep(0.5)
+
+            if not self._hf_alive: break
+
+            # Quick 2s listen for wake word only
+            self.root.after(0, lambda: self._hf_status.config(
+                text="🔇 mic open…", fg=YELLOW))
             heard = self._hf_listen_short(model, duration=2.0)
 
-            if not self._hf_alive:
-                break
+            if not self._hf_alive: break
 
             if heard and "yes" in heard.lower():
-                # Wake word detected — start transcription segment
+                # Wake word detected — record a longer segment
                 self.root.after(0, lambda: self._hf_status.config(
-                    text="🔴 RECORDING", fg=RED))
+                    text="🔴 RECORDING — speak now", fg=RED))
                 self.root.after(0, lambda: self._hf_question.config(
-                    text="Speak now — recording for 5 seconds…"))
+                    text="🔴 Recording… speak freely. (10 seconds)"))
 
-                segment = self._hf_listen_short(model, duration=5.0)
+                segment = self._hf_listen_short(model, duration=10.0)
 
                 if segment and segment.strip():
                     self._hf_segments.append({

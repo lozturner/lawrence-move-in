@@ -153,7 +153,16 @@ class NagApp:
                      fg=DIM, bg=CARD, padx=8, wraplength=380).pack(anchor="w")
         if cur.get("duration"):
             tk.Label(tf, text=f"Duration: {cur['duration']}", font=("Segoe UI",8),
-                     fg=DIM, bg=CARD, padx=8).pack(anchor="w", pady=(0,6))
+                     fg=DIM, bg=CARD, padx=8).pack(anchor="w", pady=(0,2))
+
+        # Link button if task has a URL
+        if cur.get("link"):
+            link_btn = tk.Label(tf, text=f"🔗 Open link", font=("Segoe UI",9,"bold"),
+                                fg=BLUE, bg=CARD, padx=8, cursor="hand2")
+            link_btn.pack(anchor="w", pady=(2,6))
+            link_btn.bind("<Button-1>", lambda e, url=cur["link"]: webbrowser.open(url))
+            link_btn.bind("<Enter>", lambda e, w=link_btn: w.config(fg=TEXT))
+            link_btn.bind("<Leave>", lambda e, w=link_btn: w.config(fg=BLUE))
 
         # Done checkbox
         done_var = tk.BooleanVar(value=cur.get("done", False))

@@ -1,0 +1,31 @@
+{
+  "sheet_url": "https://docs.google.com/spreadsheets/d/1rc0_hbzOUnfvEfZtD4tPgHxaCxR4hsSxl1F4Y1l94EM/edit?gid=1535495397#gid=1535495397",
+  "nag_interval_minutes": 5,
+  "tasks": [
+    {"time":"07:00","priority":"!!","category":"WAKE UP","what":"Get up, bathroom, face wash","details":"Alarm off. Feet on floor. Cold water.","duration":"15m","prep":"Phone charged overnight","after":"Check phone battery","done":false},
+    {"time":"07:15","priority":"!","category":"DRESSING","what":"Get dressed","details":"Joggers, t-shirt, socks.","duration":"15m","prep":"Clothes laid out","after":"Dirty clothes basket","done":false},
+    {"time":"07:30","priority":"!","category":"BREAKFAST","what":"Breakfast","details":"","duration":"15m","prep":"","after":"","done":false},
+    {"time":"07:45","priority":"!","category":"MEDS","what":"Take medication","details":"","duration":"5m","prep":"","after":"","done":false},
+    {"time":"08:00","priority":"!!","category":"KIDS","what":"Kids ready","details":"","duration":"30m","prep":"","after":"","done":false},
+    {"time":"08:30","priority":"!!","category":"SCHOOL RUN","what":"School run","details":"","duration":"30m","prep":"","after":"","done":false},
+    {"time":"08:45","priority":"!!","category":"📧 CALENDAR","what":"Morning Catch Up","details":"Reclaim.ai habit. Check emails, messages, notifications.","duration":"15m","prep":"","after":"","done":false,"link":"https://www.google.com/calendar/event?eid=cmVjbGFpbTBoYWJpdDBvMDQwbzAzMDk5MjgwMG8wMzA5OTI4MDBvMDIwMjYwNDA2"},
+    {"time":"09:00","priority":"!!","category":"WORK","what":"Start work block","details":"Work calendar block: 09:00-17:00","duration":"60m","prep":"","after":"","done":false},
+    {"time":"10:00","priority":"!","category":"BREAK","what":"Break — move, drink water","details":"","duration":"15m","prep":"","after":"","done":false},
+    {"time":"10:15","priority":"!!","category":"WORK","what":"Work block 2","details":"","duration":"60m","prep":"","after":"","done":false},
+    {"time":"11:15","priority":"!","category":"BREAK","what":"Break","details":"","duration":"15m","prep":"","after":"","done":false},
+    {"time":"11:30","priority":"!!","category":"WORK","what":"Work block 3","details":"","duration":"60m","prep":"","after":"","done":false},
+    {"time":"12:00","priority":"!!","category":"📅 CALENDAR","what":"London Period Night Out Research — DEAL WITH THIS","details":"Look at the London period night out research and book something! Repeats every 2 days until dealt with. Perplexity thread linked.","duration":"40m","prep":"","after":"","done":false,"link":"https://www.perplexity.ai/search/we-re-sat-in-having-an-enjoyab-CopgcL5TQ5eK4WWFzbULWQ?preview=1"},
+    {"time":"12:30","priority":"!","category":"LUNCH","what":"Lunch","details":"","duration":"30m","prep":"","after":"","done":false},
+    {"time":"13:00","priority":"!!","category":"WORK","what":"Afternoon work","details":"","duration":"90m","prep":"","after":"","done":false},
+    {"time":"14:30","priority":"!","category":"SCHOOL","what":"School pickup","details":"","duration":"30m","prep":"","after":"","done":false},
+    {"time":"15:00","priority":"!!","category":"📅 CALENDAR","what":"Review reminder from tonight's chat","details":"Review Perplexity thread. Reminder from chat with Tasha.","duration":"60m","prep":"","after":"","done":false,"link":"https://www.perplexity.ai/search/we-re-sat-in-having-an-enjoyab-CopgcL5TQ5eK4WWFzbULWQ?preview=1"},
+    {"time":"16:00","priority":"!","category":"WORK","what":"Evening work block","details":"","duration":"60m","prep":"","after":"","done":false},
+    {"time":"17:00","priority":"!","category":"📅 CALENDAR","what":"Exercise","details":"Recurring calendar event.","duration":"60m","prep":"","after":"","done":false},
+    {"time":"18:00","priority":"","category":"FAMILY","what":"Family time","details":"","duration":"60m","prep":"","after":"","done":false},
+    {"time":"19:00","priority":"","category":"KIDS","what":"Kids bedtime routine","details":"","duration":"60m","prep":"","after":"","done":false},
+    {"time":"20:00","priority":"","category":"FREE","what":"Free time / projects","details":"","duration":"60m","prep":"","after":"","done":false},
+    {"time":"21:00","priority":"!","category":"📅 CALENDAR","what":"Sleep Habits Routine","details":"Recurring calendar event. Wind down process.","duration":"30m","prep":"","after":"","done":false},
+    {"time":"22:00","priority":"!","category":"WIND DOWN","what":"Wind down, no screens","details":"","duration":"30m","prep":"","after":"","done":false},
+    {"time":"22:30","priority":"!!","category":"SLEEP","what":"Bed","details":"","duration":"","prep":"","after":"","done":false}
+  ]
+}
