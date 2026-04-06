@@ -824,9 +824,10 @@ class MousePauseApp:
         threading.Thread(target=self._hf_wake_loop, daemon=True).start()
 
     def _hf_wake_loop(self):
-        """Poll for wake word 'yes'. If heard, record 10s of speech. Long gaps between polls."""
+        """Efficient voice loop: ONE persistent stream, energy gating, reused recogniser."""
         from vosk import Model, KaldiRecognizer
         import sounddevice as sd
+        import struct
 
         model_dir = SCRIPT_DIR / "vosk-model-small-en-us-0.15"
         if not model_dir.exists():
@@ -837,86 +838,107 @@ class MousePauseApp:
             return
 
         model = Model(str(model_dir))
+        rec   = KaldiRecognizer(model, 16000)
+        q     = queue.Queue()
+        ENERGY_THRESHOLD = 500  # RMS threshold — ignore silence
 
-        while self._hf_alive:
-            if self._hf_paused:
-                time.sleep(2)
-                continue
-
-            n = len(self._hf_segments)
-            self.root.after(0, lambda n=n: self._hf_question.config(
-                text=f'🎤 Say "yes" when you want to speak. ({n} segments so far)'))
-            self.root.after(0, lambda: self._hf_status.config(
-                text="waiting for 'yes'…", fg=DIM))
-
-            # Wait 5 seconds of silence before checking mic
-            for _ in range(10):
-                if not self._hf_alive: return
-                time.sleep(0.5)
-
-            if not self._hf_alive: break
-
-            # Quick 2s listen for wake word only
-            self.root.after(0, lambda: self._hf_status.config(
-                text="🔇 mic open…", fg=YELLOW))
-            heard = self._hf_listen_short(model, duration=2.0)
-
-            if not self._hf_alive: break
-
-            if heard and "yes" in heard.lower():
-                # Wake word detected — record a longer segment
-                self.root.after(0, lambda: self._hf_status.config(
-                    text="🔴 RECORDING — speak now", fg=RED))
-                self.root.after(0, lambda: self._hf_question.config(
-                    text="🔴 Recording… speak freely. (10 seconds)"))
-
-                segment = self._hf_listen_short(model, duration=10.0)
-
-                if segment and segment.strip():
-                    self._hf_segments.append({
-                        "timestamp": datetime.now().isoformat(),
-                        "text": segment.strip()
-                    })
-                    self.root.after(0, lambda s=segment.strip(): self._hf_append(s))
-            else:
-                # No wake word — sleep 3s before next poll
-                for _ in range(6):
-                    if not self._hf_alive: break
-                    time.sleep(0.5)
-
-    def _hf_listen_short(self, model, duration=2.0):
-        """Record for `duration` seconds and return recognized text."""
-        import sounddevice as sd
-        from vosk import KaldiRecognizer
-
-        rec = KaldiRecognizer(model, 16000)
-        q = queue.Queue()
-
-        def cb(indata, frames, t, status):
+        def audio_cb(indata, frames, t, status):
             q.put(bytes(indata))
 
-        try:
-            stream = sd.RawInputStream(samplerate=16000, blocksize=4000,
-                                        dtype="int16", channels=1, callback=cb)
-            stream.start()
-            end_time = time.time() + duration
+        def rms(data):
+            """Calculate RMS energy of audio chunk."""
+            count = len(data) // 2
+            if count == 0: return 0
+            shorts = struct.unpack(f"<{count}h", data)
+            return (sum(s*s for s in shorts) / count) ** 0.5
+
+        def listen_for(seconds, require_energy=True):
+            """Listen for N seconds, return text. Skips silent chunks to save CPU."""
+            rec.Reset()
             result = ""
-            while time.time() < end_time and self._hf_alive:
+            end_t = time.time() + seconds
+            while time.time() < end_t and self._hf_alive:
                 try:
-                    data = q.get(timeout=0.3)
-                    if rec.AcceptWaveform(data):
-                        r = json.loads(rec.Result())
-                        result += " " + r.get("text","")
+                    data = q.get(timeout=0.5)
                 except queue.Empty:
-                    pass
-            # Get final
+                    continue
+                # Energy gate: skip silent chunks (no Vosk processing = less CPU)
+                if require_energy and rms(data) < ENERGY_THRESHOLD:
+                    continue
+                if rec.AcceptWaveform(data):
+                    r = json.loads(rec.Result())
+                    result += " " + r.get("text", "")
             final = json.loads(rec.FinalResult())
-            result += " " + final.get("text","")
-            stream.stop()
-            stream.close()
+            result += " " + final.get("text", "")
             return result.strip()
+
+        # Open ONE persistent stream for the entire session
+        try:
+            stream = sd.RawInputStream(samplerate=16000, blocksize=8000,
+                                        dtype="int16", channels=1,
+                                        callback=audio_cb)
+            stream.start()
         except Exception as e:
-            return ""
+            self.root.after(0, lambda: self._hf_status.config(
+                text=f"Mic error: {e}", fg=RED))
+            return
+
+        try:
+            while self._hf_alive:
+                if self._hf_paused:
+                    # Drain queue while paused (don't accumulate stale audio)
+                    while not q.empty():
+                        try: q.get_nowait()
+                        except: break
+                    time.sleep(1)
+                    continue
+
+                n = len(self._hf_segments)
+                self.root.after(0, lambda n=n: self._hf_question.config(
+                    text=f'🎤 Say "yes" when ready. ({n} segments)'))
+                self.root.after(0, lambda: self._hf_status.config(
+                    text="idle — listening for 'yes'", fg=DIM))
+
+                # Drain stale audio before wake-word check
+                while not q.empty():
+                    try: q.get_nowait()
+                    except: break
+
+                # Wait 5 seconds, then do a quick 2s listen for "yes"
+                for _ in range(10):
+                    if not self._hf_alive: break
+                    time.sleep(0.5)
+                if not self._hf_alive: break
+
+                self.root.after(0, lambda: self._hf_status.config(
+                    text="🔇 checking…", fg=YELLOW))
+                heard = listen_for(2.0, require_energy=True)
+
+                if not self._hf_alive: break
+
+                if heard and "yes" in heard.lower():
+                    # Drain queue before recording
+                    while not q.empty():
+                        try: q.get_nowait()
+                        except: break
+
+                    self.root.after(0, lambda: self._hf_status.config(
+                        text="🔴 RECORDING", fg=RED))
+                    self.root.after(0, lambda: self._hf_question.config(
+                        text="🔴 Speak now… (10 seconds)"))
+
+                    segment = listen_for(10.0, require_energy=False)
+
+                    if segment and segment.strip():
+                        self._hf_segments.append({
+                            "timestamp": datetime.now().isoformat(),
+                            "text": segment.strip()
+                        })
+                        self.root.after(0, lambda s=segment.strip(): self._hf_append(s))
+        finally:
+            # Always close the stream
+            try: stream.stop(); stream.close()
+            except: pass
 
     def _hf_append(self, text):
         """Append a segment to the transcript display."""
