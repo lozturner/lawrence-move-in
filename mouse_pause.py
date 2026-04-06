@@ -4,9 +4,9 @@ Detects mouse idle → pops a floating action panel.
 User picks what to do, or moves the mouse to dismiss.
 Configurable actions, threshold, cooldown. System tray.
 """
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
-import json, os, subprocess, sys, threading, time, tkinter as tk
+import json, os, queue, subprocess, sys, threading, time, tkinter as tk
 from datetime import datetime
 from pathlib import Path
 
@@ -68,6 +68,8 @@ DEFAULT_ACTIONS = [
      "type": "launch",          "action": "replay.py"},
     {"name": "Wind Down",       "emoji": "🌙", "color": "#a6e3a1",
      "type": "launch",          "action": "winddown.py"},
+    {"name": "Hands Free",      "emoji": "🎤", "color": "#f9e2af",
+     "type": "builtin",         "action": "hands_free"},
     {"name": "Dismiss",          "emoji": "👋", "color": DIM,
      "type": "builtin",         "action": "dismiss"},
 ]
@@ -477,7 +479,8 @@ class MousePauseApp:
         if not self._panel or not self._panel.winfo_exists():
             return
 
-        # Show answer in a floating popup near the panel
+        import urllib.parse as up
+
         dlg = tk.Toplevel(self.root)
         dlg.overrideredirect(True)
         dlg.attributes("-topmost", True)
@@ -486,29 +489,77 @@ class MousePauseApp:
 
         px = self._panel.winfo_x()
         py = self._panel.winfo_y() + self._panel.winfo_height() + 6
-        dlg.geometry(f"+{px}+{py}")
+        sw = dlg.winfo_screenwidth()
+        dlg.geometry(f"480x280+{min(px, sw-500)}+{py}")
 
         tk.Label(dlg, text="  💬 Answer", bg=BG2, fg=LAVENDER,
                  font=("Segoe UI",9,"bold"), anchor="w").pack(fill="x", ipady=4)
 
-        tk.Label(dlg, text=answer, bg=BG, fg=TEXT, font=("Segoe UI",11),
+        tk.Label(dlg, text=answer, bg=BG, fg=TEXT, font=("Segoe UI",10),
                  wraplength=450, justify="left", anchor="nw",
                  padx=12, pady=8).pack(fill="x")
 
+        # Full action bar
         bf = tk.Frame(dlg, bg=BG)
-        bf.pack(fill="x", padx=8, pady=6)
+        bf.pack(fill="x", padx=6, pady=4)
 
-        for txt, fn in [
+        actions = [
             ("📋 Copy", lambda: (self.root.clipboard_clear(),
-                                  self.root.clipboard_append(answer))),
-            ("Close",    lambda: dlg.destroy()),
-        ]:
-            b = tk.Label(bf, text=txt, bg=CARD, fg=TEXT,
-                         font=("Segoe UI",8), padx=8, pady=3, cursor="hand2")
-            b.pack(side="left", padx=2)
-            b.bind("<Button-1>", lambda e, f=fn: f())
+                                  self.root.clipboard_append(answer),
+                                  self._foot_lbl.config(text="Copied"))),
+            ("📧 Email", lambda: os.startfile(
+                f"mailto:?subject={up.quote('From Mouse Pause')}&body={up.quote(answer)}")),
+            ("✈️ Telegram", lambda: (self.root.clipboard_clear(),
+                                     self.root.clipboard_append(answer),
+                                     self._safe_startfile("tg://"))),
+            ("📝 Save", lambda: self._save_answer_note(answer)),
+            ("📸 Screenshot", lambda: self._screenshot_active_window()),
+            ("📤 JSON", lambda: (self.root.clipboard_clear(),
+                                  self.root.clipboard_append(
+                                      json.dumps({"source":"mouse_pause_ai",
+                                                   "answer":answer,
+                                                   "timestamp":datetime.now().isoformat()},
+                                                  indent=2)),
+                                  self._foot_lbl.config(text="JSON copied"))),
+            ("Close", lambda: dlg.destroy()),
+        ]
 
-        dlg.after(30000, lambda: dlg.destroy() if dlg.winfo_exists() else None)
+        for txt, fn in actions:
+            b = tk.Label(bf, text=txt, bg=CARD, fg=TEXT,
+                         font=("Segoe UI",7), padx=5, pady=3, cursor="hand2")
+            b.pack(side="left", padx=1)
+            b.bind("<Button-1>", lambda e, f=fn: f())
+            b.bind("<Enter>", lambda e, w=b: w.config(bg="#252545"))
+            b.bind("<Leave>", lambda e, w=b: w.config(bg=CARD))
+
+        dlg.after(60000, lambda: dlg.destroy() if dlg.winfo_exists() else None)
+
+    def _safe_startfile(self, path):
+        try: os.startfile(path)
+        except: pass
+
+    def _save_answer_note(self, text):
+        d = SCRIPT_DIR / "pause_notes"
+        d.mkdir(exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        (d / f"ai_{ts}.md").write_text(
+            f"# Mouse Pause AI — {datetime.now():%Y-%m-%d %H:%M}\n\n{text}\n",
+            encoding="utf-8")
+        self._foot_lbl.config(text="Saved to pause_notes/")
+
+    def _screenshot_active_window(self):
+        import mss
+        try:
+            with mss.mss() as sct:
+                raw = sct.grab(sct.monitors[0])
+                img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+            d = SCRIPT_DIR / "pause_notes"
+            d.mkdir(exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            path = d / f"screenshot_{ts}.jpg"
+            img.save(str(path), format="JPEG", quality=75)
+            self._foot_lbl.config(text=f"Screenshot: {path.name}")
+        except: pass
 
     # ── Dismiss ───────────────────────────────────────────────────────────
     def _dismiss_panel(self):
@@ -692,6 +743,258 @@ class MousePauseApp:
     def _act_lock_screen(self):
         import ctypes
         ctypes.windll.user32.LockWorkStation()
+
+    # ── Hands Free voice listener ─────────────────────────────────────────
+    def _act_hands_free(self):
+        """Voice module: polls for wake word 'yes' every 3s.
+        If heard, transcribes in 5s chunks. End Session wraps it all up."""
+        dlg = tk.Toplevel(self.root)
+        dlg.overrideredirect(True)
+        dlg.attributes("-topmost", True)
+        dlg.attributes("-alpha", 0.96)
+        dlg.configure(bg=BG)
+
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        w, h = 460, 420
+        dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+
+        hdr = tk.Frame(dlg, bg=BG2)
+        hdr.pack(fill="x")
+        tk.Label(hdr, text="  🎤 Hands Free", font=("Consolas",11,"bold"),
+                 fg=YELLOW, bg=BG2).pack(side="left", padx=8, ipady=6)
+        self._hf_status = tk.Label(hdr, text="starting…",
+                                   font=("Segoe UI",8), fg=DIM, bg=BG2)
+        self._hf_status.pack(side="left", padx=8)
+
+        xb = tk.Label(hdr, text=" ✕ ", font=("Consolas",10),
+                       fg=DIM, bg=BG2, cursor="hand2")
+        xb.pack(side="right", padx=4)
+        xb.bind("<Button-1>", lambda _: self._hf_stop(dlg))
+
+        # Question prompt
+        self._hf_question = tk.Label(dlg,
+            text='Say "yes" to start recording your voice…',
+            font=("Segoe UI",13), fg=YELLOW, bg=BG, wraplength=420, pady=12)
+        self._hf_question.pack(fill="x", padx=12)
+
+        # Transcript area
+        tf = tk.Frame(dlg, bg=CARD)
+        tf.pack(fill="both", expand=True, padx=10, pady=4)
+        self._hf_txt = tk.Text(tf, bg="#12122a", fg=TEXT,
+                                font=("Segoe UI",10), wrap="word",
+                                relief="flat", state="disabled")
+        self._hf_txt.pack(fill="both", expand=True, padx=4, pady=4)
+
+        # Segment count
+        self._hf_seg_lbl = tk.Label(dlg, text="0 segments recorded",
+                                    font=("Segoe UI",8), fg=DIM, bg=BG)
+        self._hf_seg_lbl.pack()
+
+        # Buttons
+        bf = tk.Frame(dlg, bg=BG)
+        bf.pack(fill="x", padx=10, pady=6)
+
+        end_btn = tk.Label(bf, text="🔚 End Session & Compile",
+                           font=("Segoe UI",9,"bold"), fg=BG, bg=GREEN,
+                           padx=12, pady=5, cursor="hand2")
+        end_btn.pack(side="left")
+        end_btn.bind("<Button-1>", lambda _: self._hf_end_session(dlg))
+
+        pause_btn = tk.Label(bf, text="⏸ Pause", font=("Segoe UI",8),
+                             fg=DIM, bg=CARD, padx=8, pady=4, cursor="hand2")
+        pause_btn.pack(side="left", padx=6)
+        self._hf_paused = False
+        def _toggle_pause():
+            self._hf_paused = not self._hf_paused
+            pause_btn.config(text="▶ Resume" if self._hf_paused else "⏸ Pause")
+        pause_btn.bind("<Button-1>", lambda _: _toggle_pause())
+
+        # State
+        self._hf_alive = True
+        self._hf_segments = []
+        self._hf_dlg = dlg
+
+        # Start the wake-word loop
+        threading.Thread(target=self._hf_wake_loop, daemon=True).start()
+
+    def _hf_wake_loop(self):
+        """Every 3s: open mic for 2s, listen for 'yes'. If heard, start transcription."""
+        from vosk import Model, KaldiRecognizer
+        import sounddevice as sd
+
+        model_dir = SCRIPT_DIR / "vosk-model-small-en-us-0.15"
+        if not model_dir.exists():
+            model_dir = SCRIPT_DIR / "vosk-model-en-us-0.22-lgraph"
+        if not model_dir.exists():
+            self.root.after(0, lambda: self._hf_status.config(
+                text="No Vosk model", fg=RED))
+            return
+
+        model = Model(str(model_dir))
+
+        while self._hf_alive:
+            if self._hf_paused:
+                time.sleep(1)
+                continue
+
+            self.root.after(0, lambda: self._hf_status.config(
+                text="🔇 listening for 'yes'…", fg=YELLOW))
+            self.root.after(0, lambda: self._hf_question.config(
+                text='Say "yes" to record, or stay silent…'))
+
+            # Listen for 2 seconds for wake word
+            heard = self._hf_listen_short(model, duration=2.0)
+
+            if not self._hf_alive:
+                break
+
+            if heard and "yes" in heard.lower():
+                # Wake word detected — start transcription segment
+                self.root.after(0, lambda: self._hf_status.config(
+                    text="🔴 RECORDING", fg=RED))
+                self.root.after(0, lambda: self._hf_question.config(
+                    text="Speak now — recording for 5 seconds…"))
+
+                segment = self._hf_listen_short(model, duration=5.0)
+
+                if segment and segment.strip():
+                    self._hf_segments.append({
+                        "timestamp": datetime.now().isoformat(),
+                        "text": segment.strip()
+                    })
+                    self.root.after(0, lambda s=segment.strip(): self._hf_append(s))
+            else:
+                # No wake word — sleep 3s before next poll
+                for _ in range(6):
+                    if not self._hf_alive: break
+                    time.sleep(0.5)
+
+    def _hf_listen_short(self, model, duration=2.0):
+        """Record for `duration` seconds and return recognized text."""
+        import sounddevice as sd
+        from vosk import KaldiRecognizer
+
+        rec = KaldiRecognizer(model, 16000)
+        q = queue.Queue()
+
+        def cb(indata, frames, t, status):
+            q.put(bytes(indata))
+
+        try:
+            stream = sd.RawInputStream(samplerate=16000, blocksize=4000,
+                                        dtype="int16", channels=1, callback=cb)
+            stream.start()
+            end_time = time.time() + duration
+            result = ""
+            while time.time() < end_time and self._hf_alive:
+                try:
+                    data = q.get(timeout=0.3)
+                    if rec.AcceptWaveform(data):
+                        r = json.loads(rec.Result())
+                        result += " " + r.get("text","")
+                except queue.Empty:
+                    pass
+            # Get final
+            final = json.loads(rec.FinalResult())
+            result += " " + final.get("text","")
+            stream.stop()
+            stream.close()
+            return result.strip()
+        except Exception as e:
+            return ""
+
+    def _hf_append(self, text):
+        """Append a segment to the transcript display."""
+        n = len(self._hf_segments)
+        self._hf_txt.config(state="normal")
+        self._hf_txt.insert("end", f"[{n}] {text}\n\n")
+        self._hf_txt.config(state="disabled")
+        self._hf_txt.see("end")
+        self._hf_seg_lbl.config(text=f"{n} segment{'s' if n!=1 else ''} recorded")
+
+    def _hf_end_session(self, dlg):
+        """End voice session — compile segments and show results."""
+        self._hf_alive = False
+        import urllib.parse as up
+
+        if not self._hf_segments:
+            dlg.destroy()
+            return
+
+        # Compile
+        full_text = "\n".join(s["text"] for s in self._hf_segments)
+        compiled = {
+            "source": "hands_free_voice",
+            "timestamp": datetime.now().isoformat(),
+            "segment_count": len(self._hf_segments),
+            "segments": self._hf_segments,
+            "full_text": full_text,
+        }
+
+        # Save to file
+        d = SCRIPT_DIR / "pause_notes"
+        d.mkdir(exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        json_path = d / f"handsfree_{ts}.json"
+        md_path   = d / f"handsfree_{ts}.md"
+
+        json_path.write_text(json.dumps(compiled, indent=2, ensure_ascii=False),
+                             encoding="utf-8")
+
+        md = [f"# Hands Free Session — {datetime.now():%Y-%m-%d %H:%M}\n\n"]
+        md.append(f"**Segments:** {len(self._hf_segments)}\n\n")
+        for i, s in enumerate(self._hf_segments, 1):
+            md.append(f"## Segment {i} — {s['timestamp'][11:19]}\n\n{s['text']}\n\n")
+        md.append(f"---\n\n## Full Text\n\n{full_text}\n")
+        md_path.write_text("".join(md), encoding="utf-8")
+
+        dlg.destroy()
+
+        # Show results popup
+        res = tk.Toplevel(self.root)
+        res.overrideredirect(True)
+        res.attributes("-topmost", True)
+        res.configure(bg=BG)
+        sw, sh = res.winfo_screenwidth(), res.winfo_screenheight()
+        res.geometry(f"500x350+{(sw-500)//2}+{(sh-350)//2}")
+
+        tk.Label(res, text=f"  🎤 Session complete — {len(self._hf_segments)} segments",
+                 bg=BG2, fg=GREEN, font=("Segoe UI",10,"bold"),
+                 anchor="w").pack(fill="x", ipady=6)
+
+        tk.Label(res, text=full_text[:300] + ("…" if len(full_text)>300 else ""),
+                 font=("Segoe UI",10), fg=TEXT, bg=CARD, wraplength=460,
+                 justify="left", anchor="nw", padx=10, pady=8).pack(
+                     fill="x", padx=10, pady=6)
+
+        # Action bar
+        bf = tk.Frame(res, bg=BG)
+        bf.pack(fill="x", padx=8, pady=4)
+        for txt, fn in [
+            ("📋 Copy text", lambda: (self.root.clipboard_clear(),
+                                       self.root.clipboard_append(full_text))),
+            ("📋 Copy JSON", lambda: (self.root.clipboard_clear(),
+                                       self.root.clipboard_append(
+                                           json.dumps(compiled, indent=2)))),
+            ("📧 Email", lambda: os.startfile(
+                f"mailto:?subject={up.quote('Hands Free Voice')}&body={up.quote(full_text[:1000])}")),
+            ("✈️ Telegram", lambda: (self.root.clipboard_clear(),
+                                     self.root.clipboard_append(full_text),
+                                     self._safe_startfile("tg://"))),
+            ("📁 Open", lambda: os.startfile(str(d))),
+            ("Close", lambda: res.destroy()),
+        ]:
+            b = tk.Label(bf, text=txt, font=("Segoe UI",7), fg=TEXT, bg=CARD,
+                         padx=5, pady=3, cursor="hand2")
+            b.pack(side="left", padx=1)
+            b.bind("<Button-1>", lambda e, f=fn: f())
+
+        tk.Label(res, text=f"Saved: {json_path.name} + {md_path.name}",
+                 font=("Consolas",7), fg=DIM, bg=BG).pack(pady=4)
+
+    def _hf_stop(self, dlg):
+        self._hf_alive = False
+        dlg.destroy()
 
     # ── Settings menu ─────────────────────────────────────────────────────
     def _settings_menu(self, event):
