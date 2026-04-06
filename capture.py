@@ -1,19 +1,16 @@
 """
-Lawrence: Move In — Capture v1.0.0
-Morning brain-dump tool. One click from the system tray:
-  1. Takes a screenshot
-  2. Pops up a chatbot form
-  3. You talk/type into it
-  4. Both records (screenshot + notes) get bundled
-  5. Unique code + URL generated
-  6. Copies to clipboard
-  7. Notification pops with what it did and what you can do next
+Lawrence: Move In — Capture v2.0.0
+Session-based screenshot brain dump tool.
 
-System tray controls:
-  - Left-click tray icon: capture now
-  - Right-click: settings, browse captures, clear clipboard
+- Left-click tray icon = take screenshot instantly (no popup)
+- Screenshots collected into a session automatically
+- Right-click: Capture Now, End Session, Start New Session, Browse, Clear Clipboard
+- End Session: compiles all captures into a folder with:
+    - compiled.md (all notes + AI summaries in order)
+    - compiled.json (structured data ready for any AI)
+    - AI call on the full session → summary popup appears automatically
 """
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 import base64, io, json, os, subprocess, sys, threading, time, tkinter as tk
 from datetime import datetime
@@ -27,16 +24,15 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 SCRIPT_DIR   = Path(__file__).resolve().parent
-CAPTURES_DIR = SCRIPT_DIR / "captures"
+SESSIONS_DIR = SCRIPT_DIR / "capture_sessions"
 API_CFG      = SCRIPT_DIR / "kidlin_config.json"
 PYTHONW      = Path(sys.executable).with_name("pythonw.exe")
 
 # ── Palette ──────────────────────────────────────────────────────────────────
-BG = "#0a0a14"; BG2 = "#12122a"; CARD = "#1a1a3a"
+BG = "#0a0a14"; BG2 = "#12122a"; CARD = "#1a1a3a"; CARD_HI = "#252545"
 TEXT = "#cdd6f4"; DIM = "#5a5a80"; LAV = "#b4befe"
 GRN = "#a6e3a1"; PCH = "#fab387"; MAU = "#cba6f7"
-RED = "#f38ba8"; TEAL = "#94e2d5"; YEL = "#f9e2af"
-BLUE = "#89b4fa"
+RED = "#f38ba8"; TEAL = "#94e2d5"; YEL = "#f9e2af"; BLUE = "#89b4fa"
 
 def load_api():
     try:
@@ -48,13 +44,12 @@ def take_screenshot():
     with mss.mss() as sct:
         raw = sct.grab(sct.monitors[0])
         img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
-    max_w = 1280
-    if img.width > max_w:
-        r = max_w / img.width
-        img = img.resize((max_w, int(img.height * r)), Image.LANCZOS)
+    if img.width > 1280:
+        r = 1280 / img.width
+        img = img.resize((1280, int(img.height * r)), Image.LANCZOS)
     return img
 
-def img_to_b64(img, quality=70):
+def img_to_b64(img, quality=65):
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality)
     return base64.b64encode(buf.getvalue()).decode()
@@ -69,220 +64,359 @@ def copy_clip(text):
         try: win32clipboard.CloseClipboard()
         except: pass
 
-# ── Capture Record ───────────────────────────────────────────────────────────
-class CaptureRecord:
+# ── Session ──────────────────────────────────────────────────────────────────
+class CaptureSession:
     def __init__(self):
-        self.uid       = uuid4().hex[:8].upper()
-        self.timestamp = datetime.now()
-        self.ts_str    = self.timestamp.strftime("%Y%m%d_%H%M%S")
-        self.dir       = CAPTURES_DIR / f"{self.ts_str}_{self.uid}"
+        self.uid     = uuid4().hex[:6].upper()
+        self.started = datetime.now()
+        self.ts      = self.started.strftime("%Y%m%d_%H%M%S")
+        self.dir     = SESSIONS_DIR / f"{self.ts}_{self.uid}"
         self.dir.mkdir(parents=True, exist_ok=True)
-        self.screenshot_path = None
-        self.notes     = ""
-        self.ai_summary= ""
+        (self.dir / "screenshots").mkdir(exist_ok=True)
+        self.captures = []  # [{idx, timestamp, screenshot, notes, ai_summary}]
 
-    def save_screenshot(self, img):
-        self.screenshot_path = self.dir / "screenshot.jpg"
-        img.save(self.screenshot_path, format="JPEG", quality=80)
+    def add_capture(self, img, notes=""):
+        idx = len(self.captures) + 1
+        fname = f"{idx:03d}.jpg"
+        fpath = self.dir / "screenshots" / fname
+        img.save(fpath, format="JPEG", quality=80)
 
-    def save(self):
-        data = {
-            "uid": self.uid,
-            "timestamp": self.timestamp.isoformat(),
-            "notes": self.notes,
-            "ai_summary": self.ai_summary,
-            "screenshot": str(self.screenshot_path) if self.screenshot_path else None,
+        rec = {
+            "idx": idx,
+            "uid": uuid4().hex[:8].upper(),
+            "timestamp": datetime.now().isoformat(),
+            "screenshot": fname,
+            "notes": notes,
+            "ai_summary": "",
         }
-        (self.dir / "capture.json").write_text(
+        self.captures.append(rec)
+        self._save_index()
+        return rec
+
+    def update_notes(self, idx, notes):
+        for c in self.captures:
+            if c["idx"] == idx:
+                c["notes"] = notes
+                break
+        self._save_index()
+
+    def _save_index(self):
+        data = {
+            "session_uid": self.uid,
+            "started": self.started.isoformat(),
+            "capture_count": len(self.captures),
+            "captures": self.captures,
+        }
+        (self.dir / "session.json").write_text(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
-        # Also save a readable markdown
+    def compile(self):
+        """Compile all captures into final deliverables."""
+        # compiled.json — structured, AI-ready
+        compiled_json = {
+            "session_uid": self.uid,
+            "started": self.started.isoformat(),
+            "ended": datetime.now().isoformat(),
+            "capture_count": len(self.captures),
+            "captures": [],
+        }
+        for c in self.captures:
+            compiled_json["captures"].append({
+                "index": c["idx"],
+                "timestamp": c["timestamp"],
+                "notes": c["notes"],
+                "ai_summary": c.get("ai_summary", ""),
+                "screenshot_file": c["screenshot"],
+            })
+
+        (self.dir / "compiled.json").write_text(
+            json.dumps(compiled_json, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        # compiled.md — human-readable
         md = [
-            f"# Capture {self.uid} — {self.timestamp:%Y-%m-%d %H:%M}\n\n",
-            f"**Code:** `{self.uid}`\n\n",
+            f"# Capture Session {self.uid}\n\n",
+            f"**Started:** {self.started:%Y-%m-%d %H:%M}\n",
+            f"**Ended:** {datetime.now():%Y-%m-%d %H:%M}\n",
+            f"**Captures:** {len(self.captures)}\n\n---\n\n",
         ]
-        if self.notes:
-            md.append(f"## Notes\n\n{self.notes}\n\n")
-        if self.ai_summary:
-            md.append(f"## AI Summary\n\n{self.ai_summary}\n\n")
-        if self.screenshot_path:
-            md.append(f"## Screenshot\n\n![screenshot](screenshot.jpg)\n")
+        for c in self.captures:
+            md.append(f"## Capture {c['idx']} — {c['timestamp'][:19]}\n\n")
+            md.append(f"![screenshot](screenshots/{c['screenshot']})\n\n")
+            if c["notes"]:
+                md.append(f"**Notes:** {c['notes']}\n\n")
+            if c.get("ai_summary"):
+                md.append(f"**AI:** {c['ai_summary']}\n\n")
+            md.append("---\n\n")
 
-        (self.dir / "capture.md").write_text("".join(md), encoding="utf-8")
+        (self.dir / "compiled.md").write_text("".join(md), encoding="utf-8")
 
-    def clipboard_text(self):
-        lines = [f"[Capture {self.uid}] {self.timestamp:%Y-%m-%d %H:%M}"]
-        if self.notes:
-            lines.append(self.notes[:200])
-        if self.ai_summary:
-            lines.append(f"AI: {self.ai_summary[:200]}")
-        lines.append(f"File: {self.dir}")
-        return "\n".join(lines)
+        # AI prompt — ready to paste into any LLM
+        prompt = (
+            f"Here is a capture session with {len(self.captures)} screenshots and notes.\n"
+            f"Session started: {self.started:%Y-%m-%d %H:%M}\n\n"
+            f"Please analyze the full session and tell me:\n"
+            f"1. What was I working on across these captures?\n"
+            f"2. What was the progression/flow of my work?\n"
+            f"3. Any observations about patterns or focus?\n"
+            f"4. Suggested next steps\n\n"
+            f"--- SESSION DATA ---\n\n"
+        )
+        for c in self.captures:
+            prompt += f"[Capture {c['idx']}] {c['timestamp'][:19]}\n"
+            if c["notes"]:
+                prompt += f"  Notes: {c['notes']}\n"
+            if c.get("ai_summary"):
+                prompt += f"  AI saw: {c['ai_summary']}\n"
+            prompt += "\n"
+
+        (self.dir / "ai_prompt.txt").write_text(prompt, encoding="utf-8")
+
+        return compiled_json, prompt
 
 
-# ── Capture UI ────────────────────────────────────────────────────────────────
+# ── App ───────────────────────────────────────────────────────────────────────
 class CaptureApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.withdraw()
-        self._win = None
+        self._session = None
         self._start_tray()
         self.root.mainloop()
 
-    def _do_capture(self):
-        """Main capture flow: screenshot → popup → bundle → notify."""
-        rec = CaptureRecord()
+    def _ensure_session(self):
+        if not self._session:
+            self._session = CaptureSession()
 
-        # 1. Screenshot
+    # ── Quick capture (single tray click) ─────────────────────────────────
+    def _quick_capture(self):
+        """Single click: screenshot instantly, add to session, flash notification."""
+        self._ensure_session()
         img = take_screenshot()
-        rec.save_screenshot(img)
+        rec = self._session.add_capture(img)
 
-        # 2. Show popup
-        self._show_popup(rec, img)
+        # Quick notification
+        n = len(self._session.captures)
+        self._flash_notify(
+            f"📸 #{n} captured",
+            f"Session {self._session.uid} — {n} screenshot{'s' if n>1 else ''}")
 
-    def _show_popup(self, rec, screenshot_img):
-        if self._win:
-            try: self._win.destroy()
-            except: pass
+    # ── Capture with notes popup ──────────────────────────────────────────
+    def _capture_with_notes(self):
+        self._ensure_session()
+        img = take_screenshot()
+        rec = self._session.add_capture(img)
+        self._show_notes_popup(rec, img)
 
+    def _show_notes_popup(self, rec, img):
         win = tk.Toplevel(self.root)
-        win.title(f"Capture {rec.uid}")
+        win.title(f"Capture #{rec['idx']}")
         win.attributes("-topmost", True)
         win.attributes("-alpha", 0.96)
         win.configure(bg=BG)
-        self._win = win
 
         sw = win.winfo_screenwidth()
         sh = win.winfo_screenheight()
-        w, h = min(640, sw-60), min(550, sh-60)
+        w, h = min(580, sw-60), min(420, sh-60)
         win.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
         # Header
         hdr = tk.Frame(win, bg=BG2)
         hdr.pack(fill="x")
-        tk.Label(hdr, text=f"  📸 Capture {rec.uid}",
-                 font=("Consolas",11,"bold"), fg=PCH, bg=BG2).pack(
-                     side="left", padx=8, ipady=8)
-        tk.Label(hdr, text=rec.timestamp.strftime("%H:%M:%S"),
-                 font=("Consolas",10), fg=DIM, bg=BG2).pack(
-                     side="right", padx=10)
-
-        xb = tk.Label(hdr, text=" ✕ ", font=("Consolas",11),
-                       fg=DIM, bg=BG2, cursor="hand2")
-        xb.pack(side="right", padx=4)
-        xb.bind("<Button-1>", lambda _: self._cancel(win))
+        tk.Label(hdr, text=f"  📸 #{rec['idx']}  —  Session {self._session.uid}",
+                 font=("Consolas",10,"bold"), fg=PCH, bg=BG2).pack(
+                     side="left", padx=8, ipady=6)
+        n = len(self._session.captures)
+        tk.Label(hdr, text=f"{n} in session",
+                 font=("Segoe UI",8), fg=DIM, bg=BG2).pack(side="right", padx=10)
 
         # Screenshot preview
-        prev_img = screenshot_img.copy()
-        prev_w = min(600, w - 40)
-        ratio = prev_w / prev_img.width
-        prev_img = prev_img.resize((prev_w, int(prev_img.height * ratio)), Image.LANCZOS)
-        self._photo = ImageTk.PhotoImage(prev_img)
+        prev = img.copy()
+        pw = min(540, w - 30)
+        ratio = pw / prev.width
+        prev = prev.resize((pw, int(prev.height * ratio)), Image.LANCZOS)
+        self._photo = ImageTk.PhotoImage(prev)
+        tk.Label(win, image=self._photo, bg="#000").pack(padx=8, pady=(6,4))
 
-        img_lbl = tk.Label(win, image=self._photo, bg="#000")
-        img_lbl.pack(padx=10, pady=(8,4))
-
-        tk.Label(win, text="Screenshot captured. What's on your mind?",
-                 font=("Segoe UI",9), fg=DIM, bg=BG).pack(pady=(2,4))
-
-        # Notes input
-        nf = tk.Frame(win, bg=CARD, padx=6, pady=6)
-        nf.pack(fill="x", padx=10)
-        self._txt = tk.Text(nf, bg="#12122a", fg=TEXT, insertbackground=LAV,
-                            font=("Segoe UI",11), wrap="word", height=4,
-                            relief="flat")
-        self._txt.pack(fill="x")
-        self._txt.focus_set()
-
-        # Status
-        self._cap_stat = tk.Label(win, text="", font=("Segoe UI",8),
-                                  fg=DIM, bg=BG)
-        self._cap_stat.pack(pady=2)
+        # Notes
+        nf = tk.Frame(win, bg=CARD, padx=4, pady=4)
+        nf.pack(fill="x", padx=8)
+        txt = tk.Text(nf, bg="#12122a", fg=TEXT, insertbackground=LAV,
+                      font=("Segoe UI",10), wrap="word", height=3, relief="flat")
+        txt.pack(fill="x")
+        txt.focus_set()
 
         # Buttons
         bf = tk.Frame(win, bg=BG)
-        bf.pack(fill="x", padx=10, pady=(4,10))
+        bf.pack(fill="x", padx=8, pady=6)
 
-        for txt, col, cmd in [
-            ("📸 Save & Process", GRN,
-             lambda: self._save_and_process(rec, screenshot_img, win)),
-            ("📸 Save (no AI)", BLUE,
-             lambda: self._save_only(rec, win)),
-            ("Cancel", DIM,
-             lambda: self._cancel(win)),
-        ]:
-            b = tk.Label(bf, text=f"  {txt}  ", font=("Segoe UI",9,"bold"),
-                         fg=BG if col != DIM else TEXT,
-                         bg=col if col != DIM else CARD,
-                         padx=12, pady=6, cursor="hand2")
-            b.pack(side="left", padx=(0,6))
-            b.bind("<Button-1>", lambda e, fn=cmd: fn())
-
-        self._txt.bind("<Control-Return>",
-            lambda _: self._save_and_process(rec, screenshot_img, win))
-
-    def _save_only(self, rec, win):
-        rec.notes = self._txt.get("1.0","end").strip()
-        rec.save()
-        clip = rec.clipboard_text()
-        copy_clip(clip)
-        win.destroy()
-        self._notify(rec, "Saved (no AI)")
-
-    def _save_and_process(self, rec, screenshot_img, win):
-        rec.notes = self._txt.get("1.0","end").strip()
-        self._cap_stat.config(text="Processing with AI…", fg=PCH)
-
-        api_key, model = load_api()
-        if not api_key:
-            rec.save()
-            clip = rec.clipboard_text()
-            copy_clip(clip)
+        def _save():
+            notes = txt.get("1.0","end").strip()
+            self._session.update_notes(rec["idx"], notes)
             win.destroy()
-            self._notify(rec, "Saved (no API key for AI)")
+
+        tk.Label(bf, text="  Save note  ", bg=GRN, fg=BG,
+                 font=("Segoe UI",9,"bold"), padx=10, pady=4,
+                 cursor="hand2").pack(side="left")
+        bf.winfo_children()[-1].bind("<Button-1>", lambda _: _save())
+
+        tk.Label(bf, text="  Skip  ", bg=CARD, fg=DIM,
+                 font=("Segoe UI",9), padx=10, pady=4,
+                 cursor="hand2").pack(side="left", padx=(6,0))
+        bf.winfo_children()[-1].bind("<Button-1>", lambda _: win.destroy())
+
+        txt.bind("<Control-Return>", lambda _: _save())
+
+    # ── End session ───────────────────────────────────────────────────────
+    def _end_session(self):
+        if not self._session or not self._session.captures:
+            self._flash_notify("No session", "Nothing to compile")
             return
 
+        session = self._session
+        self._session = None  # clear so next capture starts fresh
+
+        # Compile
+        compiled_json, prompt = session.compile()
+
+        # Copy prompt to clipboard
+        copy_clip(prompt)
+
+        # Try AI summary of the full session
+        api_key, model = load_api()
+        if api_key:
+            self._ai_session_summary(session, compiled_json, prompt, api_key, model)
+        else:
+            self._show_session_end_popup(session, compiled_json, prompt, None)
+
+    def _ai_session_summary(self, session, compiled_json, prompt, api_key, model):
         def _run():
             try:
                 import anthropic
                 cl = anthropic.Anthropic(api_key=api_key)
 
-                b64 = img_to_b64(screenshot_img)
-                content = [
-                    {"type": "image", "source": {
-                        "type": "base64", "media_type": "image/jpeg", "data": b64}},
-                ]
-                prompt = (
-                    "The user just captured their screen and wrote these notes:\n\n"
-                    f'"{rec.notes}"\n\n' if rec.notes else
-                    "The user just captured their screen.\n\n"
-                )
-                prompt += (
-                    "In 2-3 sentences: what are they looking at, "
-                    "what did they want to remember, and what should they do next? "
-                    "Be specific — read the screen content."
-                )
-                content.append({"type": "text", "text": prompt})
+                # Build message with all screenshots + notes
+                content = []
+                for c in session.captures[:10]:  # max 10 images for API
+                    img_path = session.dir / "screenshots" / c["screenshot"]
+                    if img_path.exists():
+                        img = Image.open(img_path)
+                        b64 = img_to_b64(img)
+                        content.append({
+                            "type": "image",
+                            "source": {"type":"base64","media_type":"image/jpeg","data":b64}
+                        })
+                        if c["notes"]:
+                            content.append({"type":"text","text":f"[#{c['idx']}] Notes: {c['notes']}"})
 
-                r = cl.messages.create(
-                    model=model, max_tokens=200,
-                    messages=[{"role":"user","content": content}])
-                rec.ai_summary = r.content[0].text.strip()
+                content.append({"type":"text","text":
+                    f"This is a capture session of {len(session.captures)} screenshots. "
+                    f"Summarize: what was the user doing across these captures? "
+                    f"What was the progression? Any patterns? Suggested next steps? "
+                    f"Keep it to 4-6 sentences."
+                })
+
+                r = cl.messages.create(model=model, max_tokens=400,
+                                       messages=[{"role":"user","content":content}])
+                summary = r.content[0].text.strip()
             except Exception as e:
-                rec.ai_summary = f"AI error: {e}"
+                summary = f"AI error: {e}"
 
-            rec.save()
-            clip = rec.clipboard_text()
-            copy_clip(clip)
-            self.root.after(0, lambda: (win.destroy(), self._notify(rec, "Processed")))
+            self.root.after(0, lambda:
+                self._show_session_end_popup(session, compiled_json, prompt, summary))
 
         threading.Thread(target=_run, daemon=True).start()
+        self._flash_notify("Compiling session…", f"{len(session.captures)} captures → AI processing")
 
-    def _cancel(self, win):
-        win.destroy()
+    def _show_session_end_popup(self, session, compiled_json, prompt, ai_summary):
+        win = tk.Toplevel(self.root)
+        win.title(f"Session {session.uid} — Complete")
+        win.attributes("-topmost", True)
+        win.attributes("-alpha", 0.96)
+        win.configure(bg=BG)
 
-    # ── Notification ──────────────────────────────────────────────────────
-    def _notify(self, rec, status):
+        sw = win.winfo_screenwidth()
+        sh = win.winfo_screenheight()
+        w, h = min(650, sw-60), min(520, sh-60)
+        win.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+
+        # Header
+        hdr = tk.Frame(win, bg=BG2)
+        hdr.pack(fill="x")
+        tk.Label(hdr, text=f"  Session {session.uid} complete",
+                 font=("Consolas",12,"bold"), fg=GRN, bg=BG2).pack(
+                     side="left", padx=8, ipady=8)
+        xb = tk.Label(hdr, text=" ✕ ", font=("Consolas",11),
+                       fg=DIM, bg=BG2, cursor="hand2")
+        xb.pack(side="right", padx=6)
+        xb.bind("<Button-1>", lambda _: win.destroy())
+
+        # Stats
+        sf = tk.Frame(win, bg=CARD)
+        sf.pack(fill="x", padx=12, pady=8)
+        for label, val, col in [
+            ("Captures", str(len(session.captures)), PCH),
+            ("Duration", f"{(datetime.now()-session.started).seconds//60}min", BLUE),
+            ("Folder", session.dir.name, DIM),
+        ]:
+            f = tk.Frame(sf, bg=CARD, padx=12, pady=6)
+            f.pack(side="left")
+            tk.Label(f, text=val, font=("Consolas",14,"bold"),
+                     fg=col, bg=CARD).pack()
+            tk.Label(f, text=label, font=("Segoe UI",7),
+                     fg=DIM, bg=CARD).pack()
+
+        # AI Summary
+        if ai_summary:
+            tk.Label(win, text="AI Session Summary",
+                     font=("Segoe UI",9,"bold"), fg=MAU, bg=BG,
+                     anchor="w").pack(fill="x", padx=14, pady=(8,2))
+            tk.Label(win, text=ai_summary, font=("Segoe UI",10),
+                     fg=TEXT, bg=CARD, wraplength=600, justify="left",
+                     anchor="nw", padx=12, pady=8).pack(fill="x", padx=12)
+
+        # Files created
+        tk.Label(win, text="Files created",
+                 font=("Segoe UI",9,"bold"), fg=TEAL, bg=BG,
+                 anchor="w").pack(fill="x", padx=14, pady=(10,2))
+        for fname in ["compiled.md", "compiled.json", "ai_prompt.txt", "session.json"]:
+            fp = session.dir / fname
+            if fp.exists():
+                tk.Label(win, text=f"  {fname}  ({fp.stat().st_size//1024}KB)",
+                         font=("Consolas",8), fg=DIM, bg=BG,
+                         anchor="w").pack(fill="x", padx=14)
+
+        # Action buttons
+        tk.Label(win, text="AI prompt copied to clipboard — paste into any LLM",
+                 font=("Segoe UI",8), fg=YEL, bg=BG).pack(pady=(8,2))
+
+        bf = tk.Frame(win, bg=BG)
+        bf.pack(fill="x", padx=12, pady=(4,12))
+
+        for txt, fn in [
+            ("📋 Copy prompt again",
+             lambda: copy_clip(prompt)),
+            ("📋 Copy JSON",
+             lambda: copy_clip(json.dumps(compiled_json, indent=2))),
+            ("📁 Open folder",
+             lambda: os.startfile(str(session.dir))),
+        ]:
+            b = tk.Label(bf, text=f"  {txt}  ", font=("Segoe UI",8),
+                         fg=TEXT, bg=CARD, padx=8, pady=4, cursor="hand2")
+            b.pack(side="left", padx=2)
+            b.bind("<Button-1>", lambda e, f=fn: f())
+            b.bind("<Enter>", lambda e, w=b: w.config(bg=CARD_HI))
+            b.bind("<Leave>", lambda e, w=b: w.config(bg=CARD))
+
+    # ── Start new session ─────────────────────────────────────────────────
+    def _start_new_session(self):
+        if self._session and self._session.captures:
+            # End current first
+            self._end_session()
+        self._session = CaptureSession()
+        self._flash_notify("New session", f"Session {self._session.uid} started")
+
+    # ── Flash notification ────────────────────────────────────────────────
+    def _flash_notify(self, title, body):
         n = tk.Toplevel(self.root)
         n.overrideredirect(True)
         n.attributes("-topmost", True)
@@ -290,83 +424,71 @@ class CaptureApp:
         n.configure(bg=BG2)
 
         sw = n.winfo_screenwidth()
-        nw = 380
-        n.geometry(f"{nw}x160+{sw-nw-20}+{40}")
+        nw = 340
+        n.geometry(f"{nw}x70+{sw-nw-20}+{40}")
 
-        tk.Label(n, text=f"📸 Capture {rec.uid} — {status}",
-                 font=("Segoe UI",10,"bold"), fg=PCH, bg=BG2,
-                 anchor="w").pack(fill="x", padx=12, pady=(10,4))
+        tk.Label(n, text=f"  {title}", font=("Segoe UI",9,"bold"),
+                 fg=PCH, bg=BG2, anchor="w").pack(fill="x", padx=6, pady=(8,0))
+        tk.Label(n, text=f"  {body}", font=("Segoe UI",8),
+                 fg=DIM, bg=BG2, anchor="w").pack(fill="x", padx=6)
 
-        lines = []
-        if rec.notes:
-            lines.append(f"Notes: {rec.notes[:60]}{'…' if len(rec.notes)>60 else ''}")
-        if rec.ai_summary:
-            lines.append(f"AI: {rec.ai_summary[:60]}{'…' if len(rec.ai_summary)>60 else ''}")
-        lines.append(f"📋 Copied to clipboard")
-        lines.append(f"📁 Saved to captures/{rec.dir.name}")
-
-        for line in lines:
-            tk.Label(n, text=line, font=("Segoe UI",8),
-                     fg=TEXT, bg=BG2, anchor="w").pack(fill="x", padx=12)
-
-        tk.Label(n, text="click to dismiss",
-                 font=("Segoe UI",7), fg=DIM, bg=BG2).pack(pady=(6,0))
         n.bind("<Button-1>", lambda _: n.destroy())
-        n.after(8000, lambda: n.destroy() if n.winfo_exists() else None)
+        n.after(3000, lambda: n.destroy() if n.winfo_exists() else None)
 
-    # ── Browse captures ───────────────────────────────────────────────────
+    # ── Browse ────────────────────────────────────────────────────────────
     def _browse(self):
-        CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
-        caps = sorted(
-            [d for d in CAPTURES_DIR.iterdir() if (d/"capture.json").exists()],
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+        sessions = sorted(
+            [d for d in SESSIONS_DIR.iterdir() if (d/"session.json").exists()],
             reverse=True)
 
         dlg = tk.Toplevel(self.root)
-        dlg.title("Captures")
+        dlg.title("Capture Sessions")
         dlg.attributes("-topmost", True)
         dlg.configure(bg=BG)
         sw = dlg.winfo_screenwidth()
         sh = dlg.winfo_screenheight()
-        dlg.geometry(f"400x450+{(sw-400)//2}+{(sh-450)//2}")
+        dlg.geometry(f"420x400+{(sw-420)//2}+{(sh-400)//2}")
 
-        tk.Label(dlg, text="  📸 Captures", bg=BG2, fg=PCH,
+        tk.Label(dlg, text="  📸 Capture Sessions", bg=BG2, fg=PCH,
                  font=("Consolas",11,"bold"), anchor="w").pack(fill="x", ipady=8)
+
+        active = self._session
+        if active and active.captures:
+            af = tk.Frame(dlg, bg="#1a2a1a")
+            af.pack(fill="x", padx=8, pady=4)
+            tk.Label(af, text=f"  Active: {active.uid} — {len(active.captures)} captures",
+                     font=("Segoe UI",9,"bold"), fg=GRN, bg="#1a2a1a",
+                     anchor="w").pack(fill="x", padx=8, ipady=6)
 
         cf = tk.Frame(dlg, bg=BG)
         cf.pack(fill="both", expand=True, padx=8, pady=4)
 
-        if not caps:
-            tk.Label(cf, text="No captures yet.\nClick the tray icon to start.",
+        if not sessions:
+            tk.Label(cf, text="No sessions yet.\nLeft-click the tray icon to start capturing.",
                      font=("Segoe UI",10), fg=DIM, bg=BG).pack(expand=True)
         else:
-            for c in caps[:20]:
+            for s in sessions[:15]:
                 try:
-                    d = json.loads((c/"capture.json").read_text(encoding="utf-8"))
-                    uid  = d.get("uid","?")
-                    ts   = d.get("timestamp","")[:16]
-                    note = (d.get("notes","") or "")[:40]
-                    label = f"{uid}  {ts}  {note}"
-                except:
-                    label = c.name
+                    d = json.loads((s/"session.json").read_text(encoding="utf-8"))
+                    uid = d.get("session_uid","?")
+                    ts  = d.get("started","")[:16]
+                    cnt = d.get("capture_count",0)
+                    compiled = (s/"compiled.md").exists()
+                    status = "compiled" if compiled else "raw"
+                    label = f"{uid}  {ts}  {cnt} caps  [{status}]"
+                except: label = s.name
 
-                row = tk.Label(cf, text=label, font=("Consolas",9),
+                row = tk.Label(cf, text=label, font=("Consolas",8),
                                fg=TEXT, bg=CARD, anchor="w", padx=10, pady=5,
                                cursor="hand2")
                 row.pack(fill="x", pady=1)
 
-                def _click(e, cap_dir=c):
-                    # Copy capture to clipboard
-                    try:
-                        d = json.loads((cap_dir/"capture.json").read_text(encoding="utf-8"))
-                        clip = f"[Capture {d['uid']}] {d['timestamp'][:16]}\n"
-                        if d.get("notes"): clip += f"{d['notes'][:200]}\n"
-                        if d.get("ai_summary"): clip += f"AI: {d['ai_summary'][:200]}\n"
-                        clip += f"File: {cap_dir}"
-                        copy_clip(clip)
-                    except: pass
+                def _open(e, sd=s):
+                    os.startfile(str(sd))
 
-                row.bind("<Button-1>", _click)
-                row.bind("<Enter>", lambda e, w=row: w.config(bg="#252545"))
+                row.bind("<Button-1>", _open)
+                row.bind("<Enter>", lambda e, w=row: w.config(bg=CARD_HI))
                 row.bind("<Leave>", lambda e, w=row: w.config(bg=CARD))
 
         cb = tk.Label(dlg, text="Close", bg=BG2, fg=DIM,
@@ -385,11 +507,22 @@ class CaptureApp:
         d.text(((64-(bb[2]-bb[0]))//2,(64-(bb[3]-bb[1]))//2),
                "CP", fill="#0a0a14", font=fnt)
 
+        def _session_label(_):
+            if self._session and self._session.captures:
+                return f"Session {self._session.uid}: {len(self._session.captures)} captures"
+            return "No active session"
+
         menu = pystray.Menu(
-            pystray.MenuItem("📸 Capture Now",
-                lambda icon, item: self.root.after(0, self._do_capture)),
+            pystray.MenuItem(_session_label, lambda i,it: None, enabled=False),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Browse Captures",
+            pystray.MenuItem("📸 Capture Now (with notes)",
+                lambda icon, item: self.root.after(0, self._capture_with_notes)),
+            pystray.MenuItem("📸 End Session & Compile",
+                lambda icon, item: self.root.after(0, self._end_session)),
+            pystray.MenuItem("📸 Start New Session",
+                lambda icon, item: self.root.after(0, self._start_new_session)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Browse Sessions",
                 lambda icon, item: self.root.after(0, self._browse)),
             pystray.MenuItem("Clear Clipboard",
                 lambda icon, item: copy_clip("")),
@@ -398,11 +531,14 @@ class CaptureApp:
                 lambda icon, item: self._quit(icon)),
         )
         self._tray = pystray.Icon("capture", img, "Capture", menu)
-        # Left-click tray icon = capture
-        self._tray.default_action = lambda icon, item: self.root.after(0, self._do_capture)
+        # Left-click = instant screenshot, no popup
+        self._tray.default_action = lambda icon, item: self.root.after(0, self._quick_capture)
         threading.Thread(target=self._tray.run, daemon=True).start()
 
     def _quit(self, icon=None):
+        # Auto-end session on quit if there are captures
+        if self._session and self._session.captures:
+            self._session.compile()
         if icon: icon.stop()
         try: self.root.destroy()
         except: pass
