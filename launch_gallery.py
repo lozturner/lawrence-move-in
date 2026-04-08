@@ -7,11 +7,11 @@ Usage:
   python launch_gallery.py
   python launch_level.py 4
 """
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 import selfclean; selfclean.ensure_single("launch_gallery.py")
 
 import json, os, subprocess, sys, time, threading, tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog, messagebox, simpledialog
 from pathlib import Path
 from PIL import Image, ImageTk, ImageDraw, ImageFont, ImageFilter
 import mss, mss.tools
@@ -21,6 +21,11 @@ PYTHONW    = Path(sys.executable).with_name("pythonw.exe")
 DETACHED   = 0x00000008
 THUMB_DIR  = SCRIPT_DIR / "thumbnails"
 THUMB_DIR.mkdir(exist_ok=True)
+EXTERNAL_CONFIG = SCRIPT_DIR / "external_apps.json"
+
+# Default colours for external apps (cycled through when adding)
+EXTERNAL_COLORS = ["#f5c2e7", "#89dceb", "#fab387", "#f9e2af", "#a6e3a1",
+                    "#b4befe", "#cba6f7", "#94e2d5", "#89b4fa", "#f38ba8"]
 
 # ── App catalogue — every app with its story ─────────────────────────────────
 APPS = [
@@ -170,13 +175,41 @@ APPS = [
     },
 ]
 
-CATEGORIES = ["Window Management", "Productivity", "AI & Voice", "Session Management"]
+CATEGORIES = ["Window Management", "Productivity", "AI & Voice", "Session Management", "External Tools"]
 CAT_COLORS = {
     "Window Management": "#a6e3a1",
     "Productivity": "#b4befe",
     "AI & Voice": "#89b4fa",
     "Session Management": "#94e2d5",
+    "External Tools": "#f5c2e7",
 }
+
+# ── External apps persistence ─────────────────────────────────────────────────
+def load_external_apps():
+    """Load user-added external apps from JSON config."""
+    if not EXTERNAL_CONFIG.exists():
+        return []
+    try:
+        with open(EXTERNAL_CONFIG, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data.get("apps", [])
+    except Exception:
+        return []
+
+def save_external_apps(apps):
+    """Save user-added external apps to JSON config."""
+    try:
+        with open(EXTERNAL_CONFIG, "w", encoding="utf-8") as f:
+            json.dump({"apps": apps, "version": "1.0"}, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Save error: {e}")
+        return False
+
+def get_all_apps():
+    """Return built-in apps + external apps merged."""
+    externals = load_external_apps()
+    return APPS + externals
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def get_running():
@@ -298,6 +331,7 @@ class GalleryLauncher:
         self.checks = {}       # script -> BooleanVar
         self.thumb_imgs = {}   # script -> ImageTk.PhotoImage (prevent GC)
         self.thumb_labels = {} # script -> Label widget
+        self._status_dot_canvas = {}
         self._running = set()
 
         self._build_ui()
@@ -327,6 +361,12 @@ class GalleryLauncher:
                     relief="flat", padx=20, pady=6, cursor="hand2",
                     command=self._run_selected)
         self.run_btn.pack(side="right", padx=(8,0))
+
+        tk.Button(btn_frame, text="+ Add App",
+                  font=("Segoe UI", 10, "bold"), fg="#ffffff", bg="#f5c2e7",
+                  activeforeground="#ffffff", activebackground="#e8a7d4",
+                  relief="flat", padx=14, pady=6, cursor="hand2",
+                  command=self._show_add_dialog).pack(side="right", padx=(4,8))
 
         tk.Button(btn_frame, text="Select All",
                   font=("Segoe UI", 9), fg="#6c5ce7", bg="#f0eef8",
@@ -374,8 +414,10 @@ class GalleryLauncher:
         self._canvas = canvas
 
         # ── Build cards by category ──
+        all_apps = get_all_apps()
+        self._all_apps_cache = all_apps
         for cat in CATEGORIES:
-            cat_apps = [a for a in APPS if a["category"] == cat]
+            cat_apps = [a for a in all_apps if a.get("category") == cat]
             if not cat_apps:
                 continue
 
@@ -450,16 +492,23 @@ class GalleryLauncher:
                  font=("Segoe UI", 11, "bold"), fg="#2d2740",
                  bg="#ffffff").pack(side="left", padx=(4,0))
 
-        # Level badge
-        level_colors = {1: "#a6e3a1", 2: "#89b4fa", 3: "#cba6f7"}
-        badge_bg = level_colors.get(app["level"], "#888")
-        badge = tk.Label(top, text=f" L{app['level']} ",
+        # Level badge or EXT badge
+        is_external = app.get("external", False)
+        if is_external:
+            badge_bg = "#f5c2e7"
+            badge_text = " EXT "
+        else:
+            level_colors = {1: "#a6e3a1", 2: "#89b4fa", 3: "#cba6f7", 4: "#f9e2af"}
+            badge_bg = level_colors.get(app["level"], "#888")
+            badge_text = f" L{app['level']} "
+        badge = tk.Label(top, text=badge_text,
                          font=("Consolas", 8, "bold"), fg="#1e1e2e",
                          bg=badge_bg)
         badge.pack(side="right")
 
-        # Status dot
-        self._status_dot_canvas = {}
+        # Status dot (init dict on first card only)
+        if not hasattr(self, '_status_dot_canvas') or self._status_dot_canvas is None:
+            self._status_dot_canvas = {}
         dot_c = tk.Canvas(top, width=10, height=10, bg="#ffffff", highlightthickness=0)
         dot_c.pack(side="right", padx=4)
         self._status_dot_canvas[script] = dot_c
@@ -494,16 +543,48 @@ class GalleryLauncher:
                  font=("Segoe UI", 8), fg="#3a3a4a", bg=sol_bg,
                  wraplength=220, justify="left", anchor="w").pack(fill="x")
 
-        # ── Script name ──
-        tk.Label(inner, text=f"{app['script']}",
+        # ── Script name / path display ──
+        if is_external:
+            display_path = app.get("path", "")
+            # Truncate long paths
+            if len(display_path) > 42:
+                display_path = "..." + display_path[-39:]
+            path_text = f"↗ {display_path}"
+        else:
+            path_text = app['script']
+        tk.Label(inner, text=path_text,
                  font=("Consolas", 8), fg="#aaa", bg="#ffffff", anchor="w").pack(fill="x")
 
         # Click card to toggle checkbox
         def _toggle(e, v=var):
             v.set(not v.get())
             self._update_count()
+
+        # Right-click menu
+        def _show_menu(e, a=app):
+            menu = tk.Menu(self.root, tearoff=0)
+            if a.get("external"):
+                menu.add_command(label=f"Launch {a['name']}",
+                                 command=lambda: self._launch_single(a))
+                menu.add_separator()
+                menu.add_command(label="Edit…",
+                                 command=lambda: self._show_add_dialog(editing=a))
+                menu.add_command(label="Recapture thumbnail…",
+                                 command=lambda: self._choose_thumbnail_method(a))
+                menu.add_separator()
+                menu.add_command(label="Delete",
+                                 command=lambda: self._delete_external(a))
+            else:
+                menu.add_command(label=f"Launch {a['name']}",
+                                 command=lambda: self._launch_single(a))
+            try:
+                menu.tk_popup(e.x_root, e.y_root)
+            finally:
+                menu.grab_release()
+
         for w in [card, inner, thumb_frame]:
             w.bind("<Button-1>", _toggle)
+            w.bind("<Button-3>", _show_menu)
 
     def _update_count(self):
         n = sum(1 for v in self.checks.values() if v.get())
@@ -529,18 +610,56 @@ class GalleryLauncher:
             self.status_label.config(text="Nothing selected — tick the apps you want to run")
             return
 
-        kill_all_suite()
-        time.sleep(0.5)
+        # Only kill internal suite apps — leave externals alone (they might be user's
+        # important tools we don't want to murder)
+        internal_selected = [s for s in selected if not s.startswith("external:")]
+        if internal_selected:
+            kill_all_suite()
+            time.sleep(0.5)
 
         launched = 0
-        for app in APPS:
-            if app["script"] in selected:
-                path = SCRIPT_DIR / app["script"]
-                if path.exists():
-                    subprocess.Popen([str(PYTHONW), str(path)],
-                                     creationflags=DETACHED, cwd=str(SCRIPT_DIR))
+        all_apps = get_all_apps()
+        for app in all_apps:
+            if app.get("script") not in selected:
+                continue
+            try:
+                if app.get("external"):
+                    # External app — launch by path type
+                    path_str = app.get("path", "")
+                    if not path_str:
+                        continue
+                    p = Path(path_str)
+                    if not p.exists() and not path_str.startswith(("http://", "https://")):
+                        continue
+                    ext = p.suffix.lower() if p.exists() else ""
+
+                    if path_str.startswith(("http://", "https://")):
+                        os.startfile(path_str)
+                    elif ext == ".py":
+                        subprocess.Popen([str(PYTHONW), str(p)],
+                                         creationflags=DETACHED, cwd=str(p.parent))
+                    elif ext in (".lnk", ".url"):
+                        os.startfile(str(p))
+                    elif ext in (".bat", ".cmd"):
+                        subprocess.Popen(["cmd", "/c", str(p)],
+                                         creationflags=DETACHED, cwd=str(p.parent))
+                    elif ext == ".ps1":
+                        subprocess.Popen(["powershell", "-File", str(p)],
+                                         creationflags=DETACHED, cwd=str(p.parent))
+                    else:
+                        # .exe or anything else — let Windows handle it
+                        os.startfile(str(p))
                     launched += 1
-                    time.sleep(0.3)
+                else:
+                    # Built-in suite app
+                    path = SCRIPT_DIR / app["script"]
+                    if path.exists():
+                        subprocess.Popen([str(PYTHONW), str(path)],
+                                         creationflags=DETACHED, cwd=str(SCRIPT_DIR))
+                        launched += 1
+                time.sleep(0.3)
+            except Exception as e:
+                print(f"Failed to launch {app.get('name')}: {e}")
 
         self.status_label.config(text=f"Launched {launched} apps")
         self._update_count()
@@ -548,9 +667,14 @@ class GalleryLauncher:
     def _load_thumbnails_async(self):
         """Load cached thumbnails or generate placeholders. No live capture (too disruptive)."""
         def _load():
-            for app in APPS:
+            for app in get_all_apps():
                 script = app["script"]
-                thumb_path = THUMB_DIR / f"{script.replace('.py','')}.png"
+                # External apps use their own thumb_path if set
+                if app.get("external") and app.get("thumb_path"):
+                    thumb_path = Path(app["thumb_path"])
+                else:
+                    safe_name = script.replace(".py", "").replace("external:", "ext_").replace(":","_").replace("/","_").replace("\\","_")
+                    thumb_path = THUMB_DIR / f"{safe_name}.png"
 
                 # Generate placeholder if no cached thumbnail
                 if not thumb_path.exists():
@@ -635,6 +759,597 @@ class GalleryLauncher:
                 pass
 
         threading.Thread(target=_capture, daemon=True).start()
+
+    # ── External app management ──────────────────────────────────────────────
+    def _rebuild_gallery(self):
+        """Tear down scroll_frame contents and rebuild from scratch.
+        Called after add/edit/delete of external apps."""
+        try:
+            # Clear all widgets in scroll_frame
+            for child in self.scroll_frame.winfo_children():
+                child.destroy()
+            # Clear state that references old widgets
+            self.checks = {}
+            self.thumb_imgs = {}
+            self.thumb_labels = {}
+            self._status_dot_canvas = {}
+
+            # Rebuild the category sections
+            all_apps = get_all_apps()
+            self._all_apps_cache = all_apps
+            for cat in CATEGORIES:
+                cat_apps = [a for a in all_apps if a.get("category") == cat]
+                if not cat_apps:
+                    continue
+                cat_color = CAT_COLORS.get(cat, "#888")
+
+                cat_frame = tk.Frame(self.scroll_frame, bg="#f8f8fc")
+                cat_frame.pack(fill="x", padx=20, pady=(20, 4))
+                dot = tk.Canvas(cat_frame, width=12, height=12, bg="#f8f8fc", highlightthickness=0)
+                dot.create_oval(2, 2, 10, 10, fill=cat_color, outline=cat_color)
+                dot.pack(side="left", padx=(0, 8))
+                tk.Label(cat_frame, text=cat.upper(),
+                         font=("Segoe UI", 10, "bold"), fg="#4a3f6b",
+                         bg="#f8f8fc", anchor="w").pack(side="left")
+                tk.Label(cat_frame, text=f"{len(cat_apps)} apps",
+                         font=("Segoe UI", 9), fg="#aaa",
+                         bg="#f8f8fc").pack(side="left", padx=8)
+                tk.Frame(self.scroll_frame, bg=cat_color, height=2).pack(fill="x", padx=20, pady=(0, 8))
+
+                grid_frame = tk.Frame(self.scroll_frame, bg="#f8f8fc")
+                grid_frame.pack(fill="x", padx=16)
+                for i, app in enumerate(cat_apps):
+                    self._make_card(grid_frame, app, i)
+
+            # Footer
+            footer = tk.Frame(self.scroll_frame, bg="#f8f8fc", pady=16)
+            footer.pack(fill="x", padx=20)
+            tk.Label(footer, text="Level 4 loads the full gallery. Select what you need, hit Run.",
+                     font=("Segoe UI", 9), fg="#aaa", bg="#f8f8fc").pack()
+            tk.Label(footer, text="Built by Loz Turner · 2026 · Lawrence: Move In",
+                     font=("Segoe UI", 8), fg="#ccc", bg="#f8f8fc").pack()
+
+            # Reload thumbnails
+            self._load_thumbnails_async()
+            self._update_count()
+        except tk.TclError:
+            pass
+
+    def _show_add_dialog(self, editing=None):
+        """Show the add-external-app dialog. If editing is set, pre-fill with that app's data."""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Add External App" if not editing else "Edit External App")
+        dlg.configure(bg="#ffffff")
+        dlg.attributes("-topmost", True)
+        dlg.transient(self.root)
+
+        w, h = 560, 640
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+
+        # Header
+        hdr = tk.Frame(dlg, bg="#f5c2e7", pady=14)
+        hdr.pack(fill="x")
+        tk.Label(hdr, text="+ Add External App" if not editing else "Edit External App",
+                 font=("Segoe UI", 14, "bold"), fg="#2d2740", bg="#f5c2e7").pack()
+        tk.Label(hdr, text="Link any .exe, .py, .lnk, .bat, or URL into your gallery",
+                 font=("Segoe UI", 9), fg="#6e5a72", bg="#f5c2e7").pack()
+
+        body = tk.Frame(dlg, bg="#ffffff", padx=20, pady=16)
+        body.pack(fill="both", expand=True)
+
+        # Helper to build a labelled entry
+        def labelled(parent, label, widget):
+            tk.Label(parent, text=label, font=("Segoe UI", 9, "bold"),
+                     fg="#4a3f6b", bg="#ffffff", anchor="w").pack(fill="x", pady=(8, 2))
+            widget.pack(fill="x")
+            return widget
+
+        # Name
+        name_var = tk.StringVar(value=editing.get("name") if editing else "")
+        name_entry = tk.Entry(body, textvariable=name_var, font=("Segoe UI", 10),
+                              relief="flat", bg="#f8f8fc", highlightthickness=1,
+                              highlightbackground="#e8e6f0", highlightcolor="#6c5ce7")
+        labelled(body, "Name", name_entry)
+
+        # Path (with Browse)
+        path_frame = tk.Frame(body, bg="#ffffff")
+        path_var = tk.StringVar(value=editing.get("path") if editing else "")
+        path_entry = tk.Entry(path_frame, textvariable=path_var, font=("Segoe UI", 9),
+                              relief="flat", bg="#f8f8fc", highlightthickness=1,
+                              highlightbackground="#e8e6f0", highlightcolor="#6c5ce7")
+        path_entry.pack(side="left", fill="x", expand=True)
+
+        def _browse():
+            filepath = filedialog.askopenfilename(
+                parent=dlg, title="Choose app or script",
+                filetypes=[("All runnable", "*.exe;*.py;*.lnk;*.bat;*.cmd;*.ps1;*.url"),
+                           ("Executables", "*.exe"),
+                           ("Python", "*.py"),
+                           ("Shortcuts", "*.lnk"),
+                           ("Batch", "*.bat;*.cmd"),
+                           ("All files", "*.*")])
+            if filepath:
+                path_var.set(filepath)
+                # Auto-fill name if empty
+                if not name_var.get():
+                    name_var.set(Path(filepath).stem.replace("_", " ").title())
+
+        tk.Button(path_frame, text="Browse…", font=("Segoe UI", 9),
+                  bg="#f0eef8", fg="#6c5ce7", relief="flat", padx=12, cursor="hand2",
+                  command=_browse).pack(side="left", padx=(6, 0))
+        labelled(body, "Path or URL (.exe, .py, .lnk, .bat, https://...)", path_frame)
+
+        # Category
+        cat_var = tk.StringVar(value=editing.get("category") if editing else "External Tools")
+        cat_combo = ttk.Combobox(body, textvariable=cat_var, values=CATEGORIES,
+                                  state="readonly", font=("Segoe UI", 9))
+        labelled(body, "Category", cat_combo)
+
+        # Problem
+        prob_var = tk.StringVar(value=editing.get("problem") if editing else "")
+        prob_entry = tk.Entry(body, textvariable=prob_var, font=("Segoe UI", 9),
+                              relief="flat", bg="#fff5f5", highlightthickness=1,
+                              highlightbackground="#f5d5d5", highlightcolor="#e64553")
+        labelled(body, "The Problem (why do you need this app?)", prob_entry)
+
+        # Solution
+        sol_var = tk.StringVar(value=editing.get("solution") if editing else "")
+        sol_entry = tk.Entry(body, textvariable=sol_var, font=("Segoe UI", 9),
+                              relief="flat", bg="#f5fff7", highlightthickness=1,
+                              highlightbackground="#c8e8ce", highlightcolor="#a6e3a1")
+        labelled(body, "The Solution (what does it do?)", sol_entry)
+
+        # Icon (2-letter badge)
+        icon_var = tk.StringVar(value=editing.get("icon") if editing else "")
+        icon_entry = tk.Entry(body, textvariable=icon_var, font=("Consolas", 11, "bold"),
+                              relief="flat", bg="#f8f8fc", highlightthickness=1,
+                              highlightbackground="#e8e6f0", highlightcolor="#6c5ce7",
+                              width=6)
+        labelled(body, "Icon (2 letters, e.g. FG for FigJam)", icon_entry)
+
+        # Thumbnail options
+        thumb_frame = tk.Frame(body, bg="#faf9ff", padx=10, pady=8)
+        thumb_frame.pack(fill="x", pady=(14, 8))
+        tk.Label(thumb_frame, text="THUMBNAIL", font=("Segoe UI", 8, "bold"),
+                 fg="#6c5ce7", bg="#faf9ff").pack(anchor="w")
+        tk.Label(thumb_frame,
+                 text="After Save, you'll be asked how to capture the thumbnail:\n"
+                      "(1) Auto — I launch it, screenshot, kill it\n"
+                      "(2) Manual — you launch it yourself, then click to capture\n"
+                      "(3) Pick file — use an existing image on disk",
+                 font=("Segoe UI", 8), fg="#666", bg="#faf9ff",
+                 justify="left").pack(anchor="w", pady=(4, 0))
+
+        # Buttons
+        btn_row = tk.Frame(dlg, bg="#ffffff", pady=14)
+        btn_row.pack(fill="x", padx=20)
+
+        def _save():
+            name = name_var.get().strip()
+            path = path_var.get().strip()
+            if not name or not path:
+                messagebox.showerror("Missing", "Name and Path are required",
+                                     parent=dlg)
+                return
+            if not editing:
+                # Check path exists (unless URL)
+                if not path.startswith(("http://", "https://")) and not Path(path).exists():
+                    if not messagebox.askyesno("Path not found",
+                            f"'{path}' doesn't exist. Save anyway?", parent=dlg):
+                        return
+
+            # Build the app dict
+            icon = icon_var.get().strip().upper()[:2] or name[:2].upper()
+            # Pick colour based on existing count (cycle through)
+            externals = load_external_apps()
+            if editing:
+                color = editing.get("color", EXTERNAL_COLORS[0])
+            else:
+                color = EXTERNAL_COLORS[len(externals) % len(EXTERNAL_COLORS)]
+
+            # Generate a unique script ID for external apps
+            if editing:
+                script_id = editing["script"]
+            else:
+                script_id = f"external:{int(time.time() * 1000)}"
+
+            app = {
+                "script": script_id,
+                "name": name,
+                "path": path,
+                "icon": icon,
+                "color": color,
+                "level": 4,
+                "problem": prob_var.get().strip() or "A tool you use that's outside the suite.",
+                "solution": sol_var.get().strip() or "One-click launch from the gallery with the rest.",
+                "category": cat_var.get(),
+                "external": True,
+            }
+
+            # Save
+            externals = load_external_apps()
+            if editing:
+                for i, e in enumerate(externals):
+                    if e["script"] == editing["script"]:
+                        externals[i] = app
+                        break
+            else:
+                externals.append(app)
+            save_external_apps(externals)
+            dlg.destroy()
+
+            # Now the thumbnail capture flow
+            if not editing:
+                self._choose_thumbnail_method(app)
+            else:
+                self._rebuild_gallery()
+
+        def _cancel():
+            dlg.destroy()
+
+        tk.Button(btn_row, text="Save", font=("Segoe UI", 10, "bold"),
+                  fg="#ffffff", bg="#6c5ce7", relief="flat", padx=24, pady=6,
+                  cursor="hand2", command=_save).pack(side="right", padx=4)
+        tk.Button(btn_row, text="Cancel", font=("Segoe UI", 10),
+                  fg="#888", bg="#f0f0f5", relief="flat", padx=18, pady=6,
+                  cursor="hand2", command=_cancel).pack(side="right")
+
+    def _choose_thumbnail_method(self, app):
+        """Ask the user how they want to capture the thumbnail for a new external app."""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Capture Thumbnail")
+        dlg.configure(bg="#ffffff")
+        dlg.attributes("-topmost", True)
+
+        w, h = 440, 320
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+
+        tk.Label(dlg, text=f"Thumbnail for {app['name']}",
+                 font=("Segoe UI", 13, "bold"), fg="#2d2740", bg="#ffffff",
+                 pady=16).pack()
+        tk.Label(dlg, text="How should we capture a thumbnail?",
+                 font=("Segoe UI", 9), fg="#888", bg="#ffffff").pack()
+
+        btn_frame = tk.Frame(dlg, bg="#ffffff", padx=20, pady=16)
+        btn_frame.pack(fill="both", expand=True)
+
+        def make_method_btn(text, desc, cmd, color):
+            f = tk.Frame(btn_frame, bg="#ffffff", cursor="hand2")
+            f.pack(fill="x", pady=4)
+            inner = tk.Frame(f, bg=color, padx=12, pady=10)
+            inner.pack(fill="x")
+            tk.Label(inner, text=text, font=("Segoe UI", 10, "bold"),
+                     fg="#2d2740", bg=color, anchor="w").pack(fill="x")
+            tk.Label(inner, text=desc, font=("Segoe UI", 8),
+                     fg="#555", bg=color, anchor="w").pack(fill="x")
+            for widget in [f, inner] + list(inner.winfo_children()):
+                widget.bind("<Button-1>", lambda e: cmd())
+
+        def _auto():
+            dlg.destroy()
+            self._auto_capture_thumbnail(app)
+
+        def _manual():
+            dlg.destroy()
+            self._manual_capture_thumbnail(app)
+
+        def _file():
+            dlg.destroy()
+            self._pick_thumbnail_file(app)
+
+        make_method_btn("🤖 Auto",
+                        "I'll launch it, wait, screenshot, and kill it. Works for most apps.",
+                        _auto, "#e8f5e9")
+        make_method_btn("✋ Manual (human-in-the-loop)",
+                        "You launch and position it. Click a button when ready.",
+                        _manual, "#fff3e0")
+        make_method_btn("📁 Pick image",
+                        "Use an existing PNG/JPG from disk.",
+                        _file, "#e3f2fd")
+
+        tk.Button(dlg, text="Skip (use placeholder)", font=("Segoe UI", 9),
+                  fg="#888", bg="#f0f0f5", relief="flat", padx=16, pady=6,
+                  cursor="hand2",
+                  command=lambda: (dlg.destroy(), self._rebuild_gallery())).pack(pady=8)
+
+    def _ext_thumb_path(self, app):
+        """Return the thumbnail path for an external app."""
+        script_id = app["script"]
+        safe = script_id.replace("external:", "ext_").replace(":", "_").replace("/","_").replace("\\","_")
+        return THUMB_DIR / f"{safe}.png"
+
+    def _auto_capture_thumbnail(self, app):
+        """Try to auto-launch the external app, screenshot it, kill it."""
+        self.status_label.config(text=f"Auto-capturing thumbnail for {app['name']}...")
+
+        def _work():
+            thumb_path = self._ext_thumb_path(app)
+            path_str = app.get("path", "")
+            p = Path(path_str)
+
+            proc = None
+            try:
+                if path_str.startswith(("http://", "https://")):
+                    os.startfile(path_str)
+                elif p.suffix.lower() == ".py":
+                    proc = subprocess.Popen([str(PYTHONW), str(p)],
+                                             creationflags=DETACHED, cwd=str(p.parent))
+                elif p.suffix.lower() in (".lnk", ".url"):
+                    os.startfile(str(p))
+                elif p.suffix.lower() in (".bat", ".cmd"):
+                    proc = subprocess.Popen(["cmd", "/c", str(p)],
+                                             creationflags=DETACHED, cwd=str(p.parent))
+                else:
+                    os.startfile(str(p))
+
+                # Wait for a window to appear
+                time.sleep(4)
+
+                # Try to find a window by name substring
+                import win32gui
+                hwnd = None
+                deadline = time.time() + 4
+                name_lower = app["name"].lower()
+                while time.time() < deadline:
+                    found = []
+                    def cb(h, _):
+                        if win32gui.IsWindowVisible(h):
+                            t = win32gui.GetWindowText(h)
+                            if t and name_lower in t.lower() and "Gallery" not in t:
+                                found.append((h, t))
+                        return True
+                    try:
+                        win32gui.EnumWindows(cb, None)
+                    except:
+                        pass
+                    if found:
+                        hwnd = found[0][0]
+                        break
+                    time.sleep(0.5)
+
+                if hwnd:
+                    try:
+                        win32gui.SetForegroundWindow(hwnd)
+                    except:
+                        pass
+                    time.sleep(0.4)
+                    rect = win32gui.GetWindowRect(hwnd)
+                    x1, y1, x2, y2 = rect
+                    w = x2 - x1
+                    h = y2 - y1
+                    if w >= 40 and h >= 40:
+                        with mss.mss() as sct:
+                            region = {"left": max(0, x1 - 6), "top": max(0, y1 - 6),
+                                       "width": w + 12, "height": h + 12}
+                            shot = sct.grab(region)
+                            img = Image.frombytes("RGB", (shot.width, shot.height), shot.rgb)
+                            img = img.resize((504, 284), Image.LANCZOS)
+                            img.save(str(thumb_path), quality=92)
+
+                        # Update app with thumb path
+                        externals = load_external_apps()
+                        for e in externals:
+                            if e["script"] == app["script"]:
+                                e["thumb_path"] = str(thumb_path)
+                                break
+                        save_external_apps(externals)
+
+                        self.status_label.config(text=f"✓ Captured thumbnail for {app['name']}")
+                    else:
+                        self.status_label.config(text=f"Window too small — try manual mode")
+                else:
+                    # Fallback: offer manual
+                    self.status_label.config(
+                        text=f"Couldn't find window — please use manual mode")
+                    self.root.after(100, lambda: self._manual_capture_thumbnail(app))
+                    return
+            except Exception as e:
+                self.status_label.config(text=f"Auto-capture failed: {e}")
+            finally:
+                if proc:
+                    try:
+                        proc.kill()
+                    except:
+                        pass
+
+            # Rebuild gallery
+            self.root.after(100, self._rebuild_gallery)
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _manual_capture_thumbnail(self, app):
+        """Human-in-the-loop: let user launch and position the app, then capture."""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Manual Capture")
+        dlg.configure(bg="#ffffff")
+        dlg.attributes("-topmost", True)
+
+        w, h = 460, 340
+        sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry(f"{w}x{h}+40+40")  # top-left so user can position target window
+
+        tk.Label(dlg, text=f"Manual Capture: {app['name']}",
+                 font=("Segoe UI", 13, "bold"), fg="#2d2740", bg="#ffffff",
+                 pady=14).pack()
+
+        instructions = tk.Frame(dlg, bg="#fff3e0", padx=16, pady=12)
+        instructions.pack(fill="x", padx=16, pady=4)
+        tk.Label(instructions, text="STEP-BY-STEP",
+                 font=("Segoe UI", 8, "bold"), fg="#e65100", bg="#fff3e0",
+                 anchor="w").pack(fill="x")
+        tk.Label(instructions,
+                 text="1. Click 'Launch App' below\n"
+                      "2. Wait for your app's window to appear\n"
+                      "3. Position and resize it nicely\n"
+                      "4. Click 'Capture Active Window' — this dialog stays out of the way",
+                 font=("Segoe UI", 9), fg="#555", bg="#fff3e0",
+                 justify="left", anchor="w").pack(fill="x", pady=4)
+
+        def _launch():
+            path_str = app.get("path", "")
+            try:
+                p = Path(path_str)
+                if path_str.startswith(("http://", "https://")):
+                    os.startfile(path_str)
+                elif p.suffix.lower() == ".py":
+                    subprocess.Popen([str(PYTHONW), str(p)],
+                                     creationflags=DETACHED, cwd=str(p.parent))
+                elif p.suffix.lower() in (".bat", ".cmd"):
+                    subprocess.Popen(["cmd", "/c", str(p)],
+                                     creationflags=DETACHED, cwd=str(p.parent))
+                else:
+                    os.startfile(str(p))
+                launch_btn.config(text="✓ Launched — now position your window",
+                                   bg="#a6e3a1")
+            except Exception as e:
+                messagebox.showerror("Launch failed", str(e), parent=dlg)
+
+        launch_btn = tk.Button(dlg, text="▶ Launch App",
+                    font=("Segoe UI", 11, "bold"), fg="#ffffff", bg="#6c5ce7",
+                    relief="flat", padx=20, pady=8, cursor="hand2",
+                    command=_launch)
+        launch_btn.pack(pady=(10, 6))
+
+        def _capture():
+            # Hide dialog briefly so it's not in the shot
+            dlg.withdraw()
+            self.root.withdraw()
+            time.sleep(0.8)
+            try:
+                import win32gui
+                hwnd = win32gui.GetForegroundWindow()
+                title = win32gui.GetWindowText(hwnd)
+                if not hwnd or "Gallery" in title or "Capture" in title:
+                    messagebox.showwarning("Wrong window",
+                        "The active window looks like the Gallery itself. "
+                        "Click on your target app first, then capture.",
+                        parent=self.root)
+                    dlg.deiconify()
+                    self.root.deiconify()
+                    return
+
+                rect = win32gui.GetWindowRect(hwnd)
+                x1, y1, x2, y2 = rect
+                w_ = x2 - x1
+                h_ = y2 - y1
+                if w_ < 40 or h_ < 40:
+                    messagebox.showwarning("Too small",
+                        f"Window is only {w_}x{h_}. Make it bigger.",
+                        parent=self.root)
+                    dlg.deiconify()
+                    self.root.deiconify()
+                    return
+
+                thumb_path = self._ext_thumb_path(app)
+                with mss.mss() as sct:
+                    region = {"left": max(0, x1 - 6), "top": max(0, y1 - 6),
+                              "width": w_ + 12, "height": h_ + 12}
+                    shot = sct.grab(region)
+                    img = Image.frombytes("RGB", (shot.width, shot.height), shot.rgb)
+                    img = img.resize((504, 284), Image.LANCZOS)
+                    img.save(str(thumb_path), quality=92)
+
+                # Update app with thumb path
+                externals = load_external_apps()
+                for e in externals:
+                    if e["script"] == app["script"]:
+                        e["thumb_path"] = str(thumb_path)
+                        break
+                save_external_apps(externals)
+
+                self.root.deiconify()
+                dlg.destroy()
+                self.status_label.config(
+                    text=f"✓ Captured '{title[:30]}' for {app['name']}")
+                self._rebuild_gallery()
+            except Exception as e:
+                self.root.deiconify()
+                dlg.deiconify()
+                messagebox.showerror("Capture failed", str(e), parent=dlg)
+
+        tk.Button(dlg, text="📸 Capture Active Window",
+                    font=("Segoe UI", 11, "bold"), fg="#ffffff", bg="#f5c2e7",
+                    relief="flat", padx=20, pady=8, cursor="hand2",
+                    command=_capture).pack(pady=6)
+
+        tk.Button(dlg, text="Cancel", font=("Segoe UI", 9),
+                    fg="#888", bg="#f0f0f5", relief="flat", padx=14, pady=4,
+                    cursor="hand2",
+                    command=lambda: (dlg.destroy(), self._rebuild_gallery())).pack(pady=4)
+
+    def _pick_thumbnail_file(self, app):
+        """Let user pick an existing image file as the thumbnail."""
+        filepath = filedialog.askopenfilename(
+            parent=self.root, title="Choose thumbnail image",
+            filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp"),
+                       ("All files", "*.*")])
+        if not filepath:
+            self._rebuild_gallery()
+            return
+
+        try:
+            thumb_path = self._ext_thumb_path(app)
+            img = Image.open(filepath).convert("RGB")
+            img = img.resize((504, 284), Image.LANCZOS)
+            img.save(str(thumb_path), quality=92)
+
+            externals = load_external_apps()
+            for e in externals:
+                if e["script"] == app["script"]:
+                    e["thumb_path"] = str(thumb_path)
+                    break
+            save_external_apps(externals)
+
+            self.status_label.config(text=f"✓ Thumbnail set from file for {app['name']}")
+        except Exception as e:
+            messagebox.showerror("Image error", str(e), parent=self.root)
+
+        self._rebuild_gallery()
+
+    def _launch_single(self, app):
+        """Launch a single app (built-in or external) without affecting others."""
+        try:
+            if app.get("external"):
+                path_str = app.get("path", "")
+                if not path_str:
+                    return
+                p = Path(path_str)
+                if path_str.startswith(("http://", "https://")):
+                    os.startfile(path_str)
+                elif p.suffix.lower() == ".py":
+                    subprocess.Popen([str(PYTHONW), str(p)],
+                                     creationflags=DETACHED, cwd=str(p.parent))
+                elif p.suffix.lower() in (".lnk", ".url"):
+                    os.startfile(str(p))
+                elif p.suffix.lower() in (".bat", ".cmd"):
+                    subprocess.Popen(["cmd", "/c", str(p)],
+                                     creationflags=DETACHED, cwd=str(p.parent))
+                elif p.suffix.lower() == ".ps1":
+                    subprocess.Popen(["powershell", "-File", str(p)],
+                                     creationflags=DETACHED, cwd=str(p.parent))
+                else:
+                    os.startfile(str(p))
+            else:
+                path = SCRIPT_DIR / app["script"]
+                if path.exists():
+                    subprocess.Popen([str(PYTHONW), str(path)],
+                                     creationflags=DETACHED, cwd=str(SCRIPT_DIR))
+            self.status_label.config(text=f"Launched {app['name']}")
+        except Exception as e:
+            self.status_label.config(text=f"Launch failed: {e}")
+
+    def _delete_external(self, app):
+        """Delete an external app after confirmation."""
+        if not messagebox.askyesno("Delete",
+                f"Remove '{app['name']}' from your gallery?",
+                parent=self.root):
+            return
+        externals = load_external_apps()
+        externals = [e for e in externals if e["script"] != app["script"]]
+        save_external_apps(externals)
+        self._rebuild_gallery()
 
     def run(self):
         self.root.mainloop()
