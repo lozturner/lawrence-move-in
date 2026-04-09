@@ -1,5 +1,5 @@
 """
-Lawrence: Move In — Level 4: Gallery Launcher v1.0.0
+Lawrence: Move In — Level 4: Gallery Launcher v1.1.0
 Visual gallery of every applet with live thumbnails, descriptions, and checkboxes.
 Spins each app up briefly to capture a screenshot, then presents the full catalogue.
 
@@ -173,6 +173,14 @@ APPS = [
         "solution": "Gamification. Glowing orbs. XP ring. Level up by using your suite. Progress bars and unlocks.",
         "category": "Session Management",
     },
+    {
+        "script": "steps.py",
+        "name": "Steps Recorder",
+        "icon": "ST", "color": "#f5c2e7", "level": 3,
+        "problem": "Windows Steps Recorder is dead. You need to document what you clicked and why.",
+        "solution": "Records every click, keystroke, window switch with screenshots, handles, PIDs, clipboard. Navigable step-by-step viewer. Exports to JSON and markdown.",
+        "category": "Session Management",
+    },
 ]
 
 CATEGORIES = ["Window Management", "Productivity", "AI & Voice", "Session Management", "External Tools"]
@@ -319,7 +327,7 @@ def capture_app_thumbnail(app, timeout=4):
 class GalleryLauncher:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Lawrence: Move In — Level 4 Gallery v1.0.0")
+        self.root.title(f"Lawrence: Move In — Level 4 Gallery v{__version__}")
         self.root.configure(bg="#f8f8fc")
 
         sw = self.root.winfo_screenwidth()
