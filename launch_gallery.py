@@ -1,13 +1,13 @@
 """
-Lawrence: Move In — Level 4: Gallery Launcher v1.1.0
-Visual gallery of every applet with live thumbnails, descriptions, and checkboxes.
-Spins each app up briefly to capture a screenshot, then presents the full catalogue.
+Lawrence: Move In — Level 4: Gallery Launcher v2.0.0
+Visual gallery of every applet. Click any card to launch it instantly.
+"Launch All" fires everything. "+ Add App" is one paste, one Enter.
 
 Usage:
   python launch_gallery.py
   python launch_level.py 4
 """
-__version__ = "1.1.0"
+__version__ = "2.0.0"
 import selfclean; selfclean.ensure_single("launch_gallery.py")
 
 import json, os, subprocess, sys, time, threading, tkinter as tk
@@ -344,11 +344,11 @@ class GalleryLauncher:
         self.root.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
         self.root.minsize(700, 500)
 
-        self.checks = {}       # script -> BooleanVar
         self.thumb_imgs = {}   # script -> ImageTk.PhotoImage (prevent GC)
         self.thumb_labels = {} # script -> Label widget
         self._status_dot_canvas = {}
         self._running = set()
+        self._app_lookup = {}  # script -> app dict for click-to-launch
 
         self._build_ui()
         self._load_thumbnails_async()
@@ -371,11 +371,11 @@ class GalleryLauncher:
         btn_frame = tk.Frame(hdr, bg="#ffffff")
         btn_frame.pack(side="right")
 
-        self.run_btn = tk.Button(btn_frame, text="▶  Run Selected",
+        self.run_btn = tk.Button(btn_frame, text="▶  Launch All",
                     font=("Segoe UI", 11, "bold"), fg="#ffffff", bg="#6c5ce7",
                     activeforeground="#ffffff", activebackground="#5a4bd1",
                     relief="flat", padx=20, pady=6, cursor="hand2",
-                    command=self._run_selected)
+                    command=self._launch_all)
         self.run_btn.pack(side="right", padx=(8,0))
 
         tk.Button(btn_frame, text="+ Add App",
@@ -383,16 +383,6 @@ class GalleryLauncher:
                   activeforeground="#ffffff", activebackground="#e8a7d4",
                   relief="flat", padx=14, pady=6, cursor="hand2",
                   command=self._show_add_dialog).pack(side="right", padx=(4,8))
-
-        tk.Button(btn_frame, text="Select All",
-                  font=("Segoe UI", 9), fg="#6c5ce7", bg="#f0eef8",
-                  relief="flat", padx=12, pady=4, cursor="hand2",
-                  command=self._select_all).pack(side="right", padx=4)
-
-        tk.Button(btn_frame, text="Clear",
-                  font=("Segoe UI", 9), fg="#888", bg="#f0f0f5",
-                  relief="flat", padx=12, pady=4, cursor="hand2",
-                  command=self._clear_all).pack(side="right", padx=4)
 
         # ── Divider ──
         tk.Frame(root, bg="#e8e6f0", height=2).pack(fill="x")
@@ -403,7 +393,7 @@ class GalleryLauncher:
         self.status_label = tk.Label(self.status_frame, text="Loading thumbnails...",
                                       font=("Segoe UI", 9), fg="#8b82a8", bg="#faf9ff")
         self.status_label.pack(side="left")
-        self.count_label = tk.Label(self.status_frame, text="0 selected",
+        self.count_label = tk.Label(self.status_frame, text="0 running",
                                      font=("Segoe UI", 9, "bold"), fg="#6c5ce7", bg="#faf9ff")
         self.count_label.pack(side="right")
 
@@ -470,43 +460,37 @@ class GalleryLauncher:
         # ── Footer ──
         footer = tk.Frame(self.scroll_frame, bg="#f8f8fc", pady=16)
         footer.pack(fill="x", padx=20)
-        tk.Label(footer, text="Level 4 loads the full gallery. Select what you need, hit Run.",
+        tk.Label(footer, text="Click any card to launch it. 'Launch All' fires everything.",
                  font=("Segoe UI", 9), fg="#aaa", bg="#f8f8fc").pack()
         tk.Label(footer, text="Built by Loz Turner · 2026 · Lawrence: Move In",
                  font=("Segoe UI", 8), fg="#ccc", bg="#f8f8fc").pack()
 
     def _make_card(self, parent, app, index):
-        """Create a single app card with thumbnail, checkbox, descriptions."""
+        """Create a single app card. Click anywhere on it to launch immediately."""
         col = app["color"]
         script = app["script"]
+        self._app_lookup[script] = app
 
         # Card frame
         card = tk.Frame(parent, bg="#ffffff", padx=0, pady=0,
                         relief="flat", highlightthickness=1,
-                        highlightbackground="#e8e6f0")
+                        highlightbackground="#e8e6f0", cursor="hand2")
         card.grid(row=index // 3, column=index % 3, padx=8, pady=8, sticky="nsew")
         parent.grid_columnconfigure(index % 3, weight=1)
 
         # Coloured top accent
         tk.Frame(card, bg=col, height=4).pack(fill="x")
 
-        inner = tk.Frame(card, bg="#ffffff", padx=14, pady=10)
+        inner = tk.Frame(card, bg="#ffffff", padx=14, pady=10, cursor="hand2")
         inner.pack(fill="both", expand=True)
 
-        # ── Top row: checkbox + name + level badge ──
+        # ── Top row: name + level badge + status dot ──
         top = tk.Frame(inner, bg="#ffffff")
         top.pack(fill="x")
 
-        var = tk.BooleanVar(value=False)
-        self.checks[script] = var
-
-        cb = tk.Checkbutton(top, variable=var, bg="#ffffff", activebackground="#ffffff",
-                            selectcolor="#ffffff", command=self._update_count)
-        cb.pack(side="left")
-
         tk.Label(top, text=app["name"],
                  font=("Segoe UI", 11, "bold"), fg="#2d2740",
-                 bg="#ffffff").pack(side="left", padx=(4,0))
+                 bg="#ffffff", cursor="hand2").pack(side="left", padx=(4,0))
 
         # Level badge or EXT badge
         is_external = app.get("external", False)
@@ -522,20 +506,18 @@ class GalleryLauncher:
                          bg=badge_bg)
         badge.pack(side="right")
 
-        # Status dot (init dict on first card only)
-        if not hasattr(self, '_status_dot_canvas') or self._status_dot_canvas is None:
-            self._status_dot_canvas = {}
+        # Status dot
         dot_c = tk.Canvas(top, width=10, height=10, bg="#ffffff", highlightthickness=0)
         dot_c.pack(side="right", padx=4)
         self._status_dot_canvas[script] = dot_c
 
         # ── Thumbnail ──
-        thumb_frame = tk.Frame(inner, bg="#e8e6f0", width=252, height=142)
+        thumb_frame = tk.Frame(inner, bg="#e8e6f0", width=252, height=142, cursor="hand2")
         thumb_frame.pack(fill="x", pady=(8,6))
         thumb_frame.pack_propagate(False)
 
         thumb_label = tk.Label(thumb_frame, bg="#e8e6f0", text="Loading...",
-                               font=("Segoe UI", 9), fg="#aaa")
+                               font=("Segoe UI", 9), fg="#aaa", cursor="hand2")
         thumb_label.pack(expand=True)
         self.thumb_labels[script] = thumb_label
 
@@ -562,7 +544,6 @@ class GalleryLauncher:
         # ── Script name / path display ──
         if is_external:
             display_path = app.get("path", "")
-            # Truncate long paths
             if len(display_path) > 42:
                 display_path = "..." + display_path[-39:]
             path_text = f"↗ {display_path}"
@@ -571,21 +552,20 @@ class GalleryLauncher:
         tk.Label(inner, text=path_text,
                  font=("Consolas", 8), fg="#aaa", bg="#ffffff", anchor="w").pack(fill="x")
 
-        # Click card to toggle checkbox
-        def _toggle(e, v=var):
-            v.set(not v.get())
-            self._update_count()
+        # Single-click anywhere on card = launch this app
+        def _click_launch(e, a=app):
+            self._launch_single(a)
 
-        # Right-click menu
+        # Right-click context menu (Edit/Delete/Recapture for externals)
         def _show_menu(e, a=app):
             menu = tk.Menu(self.root, tearoff=0)
             if a.get("external"):
                 menu.add_command(label=f"Launch {a['name']}",
                                  command=lambda: self._launch_single(a))
                 menu.add_separator()
-                menu.add_command(label="Edit…",
-                                 command=lambda: self._show_add_dialog(editing=a))
-                menu.add_command(label="Recapture thumbnail…",
+                menu.add_command(label="Edit...",
+                                 command=lambda: self._edit_external_dialog(a))
+                menu.add_command(label="Recapture thumbnail...",
                                  command=lambda: self._choose_thumbnail_method(a))
                 menu.add_separator()
                 menu.add_command(label="Delete",
@@ -598,87 +578,37 @@ class GalleryLauncher:
             finally:
                 menu.grab_release()
 
-        for w in [card, inner, thumb_frame]:
-            w.bind("<Button-1>", _toggle)
+        # Bind click-to-launch and right-click menu to all card widgets
+        for w in [card, inner, thumb_frame, thumb_label]:
+            w.bind("<Button-1>", _click_launch)
             w.bind("<Button-3>", _show_menu)
 
-    def _update_count(self):
-        n = sum(1 for v in self.checks.values() if v.get())
-        self.count_label.config(text=f"{n} selected")
-        if n > 0:
-            self.run_btn.config(text=f"▶  Run {n} App{'s' if n>1 else ''}", bg="#6c5ce7")
-        else:
-            self.run_btn.config(text="▶  Run Selected", bg="#a8a0c0")
+    def _update_running_count(self):
+        """Update the running counter label from current poll data."""
+        n = len(self._running)
+        self.count_label.config(text=f"{n} running")
 
-    def _select_all(self):
-        for v in self.checks.values():
-            v.set(True)
-        self._update_count()
-
-    def _clear_all(self):
-        for v in self.checks.values():
-            v.set(False)
-        self._update_count()
-
-    def _run_selected(self):
-        selected = [s for s, v in self.checks.items() if v.get()]
-        if not selected:
-            self.status_label.config(text="Nothing selected — tick the apps you want to run")
+    def _launch_all(self):
+        """Launch every built-in + external app."""
+        all_apps = get_all_apps()
+        if not all_apps:
+            self.status_label.config(text="No apps to launch")
             return
 
-        # Only kill internal suite apps — leave externals alone (they might be user's
-        # important tools we don't want to murder)
-        internal_selected = [s for s in selected if not s.startswith("external:")]
-        if internal_selected:
-            kill_all_suite()
-            time.sleep(0.5)
+        # Kill existing suite apps first so we get a clean slate
+        kill_all_suite()
+        time.sleep(0.5)
 
         launched = 0
-        all_apps = get_all_apps()
         for app in all_apps:
-            if app.get("script") not in selected:
-                continue
             try:
-                if app.get("external"):
-                    # External app — launch by path type
-                    path_str = app.get("path", "")
-                    if not path_str:
-                        continue
-                    p = Path(path_str)
-                    if not p.exists() and not path_str.startswith(("http://", "https://")):
-                        continue
-                    ext = p.suffix.lower() if p.exists() else ""
-
-                    if path_str.startswith(("http://", "https://")):
-                        os.startfile(path_str)
-                    elif ext == ".py":
-                        subprocess.Popen([str(PYTHONW), str(p)],
-                                         creationflags=DETACHED, cwd=str(p.parent))
-                    elif ext in (".lnk", ".url"):
-                        os.startfile(str(p))
-                    elif ext in (".bat", ".cmd"):
-                        subprocess.Popen(["cmd", "/c", str(p)],
-                                         creationflags=DETACHED, cwd=str(p.parent))
-                    elif ext == ".ps1":
-                        subprocess.Popen(["powershell", "-File", str(p)],
-                                         creationflags=DETACHED, cwd=str(p.parent))
-                    else:
-                        # .exe or anything else — let Windows handle it
-                        os.startfile(str(p))
-                    launched += 1
-                else:
-                    # Built-in suite app
-                    path = SCRIPT_DIR / app["script"]
-                    if path.exists():
-                        subprocess.Popen([str(PYTHONW), str(path)],
-                                         creationflags=DETACHED, cwd=str(SCRIPT_DIR))
-                        launched += 1
+                self._launch_single(app, quiet=True)
+                launched += 1
                 time.sleep(0.3)
             except Exception as e:
                 print(f"Failed to launch {app.get('name')}: {e}")
 
         self.status_label.config(text=f"Launched {launched} apps")
-        self._update_count()
 
     def _load_thumbnails_async(self):
         """Load cached thumbnails or generate placeholders. No live capture (too disruptive)."""
@@ -713,7 +643,7 @@ class GalleryLauncher:
                     pass
 
             try:
-                self.status_label.config(text="Gallery ready — select apps and hit Run")
+                self.status_label.config(text="Gallery ready — click any card to launch")
             except tk.TclError:
                 pass
 
@@ -733,11 +663,11 @@ class GalleryLauncher:
                 except tk.TclError:
                     pass
 
-            running_count = len(self._running)
+            self._update_running_count()
             cur = self.status_label.cget("text")
             if "Gallery ready" in cur or "running" in cur:
                 self.status_label.config(
-                    text=f"Gallery ready — {running_count} apps currently running")
+                    text=f"Gallery ready — {len(self._running)} apps currently running")
 
             self.root.after(3000, self._poll_running)
         except tk.TclError:
@@ -785,10 +715,10 @@ class GalleryLauncher:
             for child in self.scroll_frame.winfo_children():
                 child.destroy()
             # Clear state that references old widgets
-            self.checks = {}
             self.thumb_imgs = {}
             self.thumb_labels = {}
             self._status_dot_canvas = {}
+            self._app_lookup = {}
 
             # Rebuild the category sections
             all_apps = get_all_apps()
@@ -820,14 +750,14 @@ class GalleryLauncher:
             # Footer
             footer = tk.Frame(self.scroll_frame, bg="#f8f8fc", pady=16)
             footer.pack(fill="x", padx=20)
-            tk.Label(footer, text="Level 4 loads the full gallery. Select what you need, hit Run.",
+            tk.Label(footer, text="Click any card to launch it. 'Launch All' fires everything.",
                      font=("Segoe UI", 9), fg="#aaa", bg="#f8f8fc").pack()
             tk.Label(footer, text="Built by Loz Turner · 2026 · Lawrence: Move In",
                      font=("Segoe UI", 8), fg="#ccc", bg="#f8f8fc").pack()
 
             # Reload thumbnails
             self._load_thumbnails_async()
-            self._update_count()
+            self._update_running_count()
         except tk.TclError:
             pass
 

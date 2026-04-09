@@ -93,3 +93,43 @@ def kill_and_relaunch(script_name: str):
             cwd=str(SCRIPT_DIR))
 
     return killed
+
+
+def is_already_running(script_name: str) -> bool:
+    """Check if a script is already running (excluding current process).
+    Use this before launching to prevent double instances."""
+    try:
+        import psutil
+    except ImportError:
+        return False
+
+    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+        if proc.info["pid"] == MY_PID:
+            continue
+        try:
+            name = (proc.info.get("name") or "").lower()
+            if "python" not in name:
+                continue
+            cmdline = proc.info.get("cmdline") or []
+            for arg in cmdline:
+                if arg.endswith(script_name) or arg.endswith(script_name.replace("/", "\\")):
+                    return True
+        except Exception:
+            pass
+    return False
+
+
+def safe_launch(script_name: str) -> bool:
+    """Launch a script ONLY if it's not already running. Returns True if launched, False if skipped."""
+    if is_already_running(script_name):
+        return False  # already running, skip
+
+    script_path = SCRIPT_DIR / script_name
+    if not script_path.exists():
+        return False
+
+    subprocess.Popen(
+        [str(PYTHONW), str(script_path)],
+        creationflags=0x00000008,
+        cwd=str(SCRIPT_DIR))
+    return True

@@ -117,11 +117,11 @@ def kill_all_suite():
         except: pass
 
 def launch_scripts(scripts):
+    import selfclean
     for script, name, desc in scripts:
-        path = SCRIPT_DIR / script
-        if path.exists():
-            subprocess.Popen([str(PYTHONW), str(path)],
-                             creationflags=DETACHED, cwd=str(SCRIPT_DIR))
+        if selfclean.is_already_running(script):
+            print(f"  SKIP    {name:<18s} (already running)")
+        elif selfclean.safe_launch(script):
             print(f"  Launched {name:<18s} {desc[:60]}")
         else:
             print(f"  SKIP    {name:<18s} (file not found)")

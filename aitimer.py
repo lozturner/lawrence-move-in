@@ -1,672 +1,827 @@
 """
-Lawrence: Move In — AI Timer v1.0.0
-Track time spent in LLM chats and other windows. Multiple concurrent timers.
-Auto-logs active window. Jump back to any tracked window. Periodic check-ins.
+Lawrence: Move In -- AI Timer v2.0.0
+Live window list with inline timers. Click a window row to start timing it.
+Grouped by category. AI/LLM windows highlighted purple. Periodic check-ins.
+Export to markdown. System tray.
 
 Usage:
   python aitimer.py
-  Double-click "Lawrence — AI Timer" desktop shortcut
+  Double-click "Lawrence -- AI Timer" desktop shortcut
 """
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 import selfclean; selfclean.ensure_single("aitimer.py")
 
-import json, os, subprocess, sys, time, threading, tkinter as tk
-from tkinter import ttk, simpledialog, messagebox
+import json, os, threading, time, tkinter as tk
+from tkinter import ttk
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import OrderedDict
-import win32gui, win32process, win32con
+
+import win32gui, win32con, win32process, win32api
 import psutil
-from PIL import Image, ImageTk, ImageDraw
+import pystray
+from PIL import Image, ImageDraw
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = SCRIPT_DIR / "aitimer_config.json"
 LOG_DIR = SCRIPT_DIR / "aitimer_logs"
 LOG_DIR.mkdir(exist_ok=True)
 
-# ── Known LLM / AI window patterns ───────────────────────────────────────────
+# -- Friendly name mapping (exe -> (display_name, category)) ------------------
+
+FRIENDLY_NAMES = {
+    # Browsers
+    "chrome.exe": ("Chrome", "Browsers"), "msedge.exe": ("Edge", "Browsers"),
+    "firefox.exe": ("Firefox", "Browsers"), "brave.exe": ("Brave", "Browsers"),
+    "opera.exe": ("Opera", "Browsers"), "vivaldi.exe": ("Vivaldi", "Browsers"),
+    # AI / LLM
+    "claude.exe": ("Claude Desktop", "AI / LLM"),
+    # Dev Tools
+    "Code.exe": ("VS Code", "Dev Tools"), "code.exe": ("VS Code", "Dev Tools"),
+    "devenv.exe": ("Visual Studio", "Dev Tools"),
+    "WindowsTerminal.exe": ("Terminal", "Dev Tools"), "cmd.exe": ("CMD", "Dev Tools"),
+    "powershell.exe": ("PowerShell", "Dev Tools"), "pwsh.exe": ("PowerShell", "Dev Tools"),
+    "python.exe": ("Python", "Dev Tools"), "pythonw.exe": ("Python", "Dev Tools"),
+    "node.exe": ("Node.js", "Dev Tools"),
+    "Figma.exe": ("Figma", "Dev Tools"),
+    # Communication
+    "Teams.exe": ("Teams", "Communication"), "ms-teams.exe": ("Teams", "Communication"),
+    "slack.exe": ("Slack", "Communication"), "Slack.exe": ("Slack", "Communication"),
+    "Discord.exe": ("Discord", "Communication"), "discord.exe": ("Discord", "Communication"),
+    "OUTLOOK.EXE": ("Outlook", "Communication"), "Outlook.exe": ("Outlook", "Communication"),
+    # Office / Notes
+    "WINWORD.EXE": ("Word", "Other"), "EXCEL.EXE": ("Excel", "Other"),
+    "POWERPNT.EXE": ("PowerPoint", "Other"),
+    "Obsidian.exe": ("Obsidian", "Other"), "Notion.exe": ("Notion", "Other"),
+    "notepad.exe": ("Notepad", "Other"), "Notepad.exe": ("Notepad", "Other"),
+    # Files / System
+    "explorer.exe": ("File Explorer", "Other"),
+    "Taskmgr.exe": ("Task Manager", "Other"),
+    "mstsc.exe": ("Remote Desktop", "Other"),
+    "ShadowPC.exe": ("Shadow PC", "Other"),
+    "Spotify.exe": ("Spotify", "Other"), "spotify.exe": ("Spotify", "Other"),
+    "osk.exe": ("On-Screen Keyboard", "Other"),
+}
+
+# Titles to skip entirely
+SKIP_TITLES = {"Program Manager", "Windows Input Experience", "", "MSCTFIME UI",
+               "Default IME", "Windows Default Lock Screen"}
+
+# AI/LLM detection patterns (matched against window title, lowercase)
 AI_PATTERNS = [
     "chatgpt", "claude", "gemini", "copilot", "perplexity",
     "bard", "mistral", "groq", "openai", "anthropic",
-    "huggingface", "colab", "jupyter", "notebook",
-    "ai studio", "playground", "arena", "poe.com",
+    "huggingface", "colab", "jupyter", "ai studio",
 ]
 
+# Category display order
+CATEGORY_ORDER = ["AI / LLM", "Browsers", "Dev Tools", "Communication", "Other"]
+
+# Check-in interval options (label -> seconds, 0 = off)
+CHECK_INTERVALS = OrderedDict([
+    ("2 min", 120), ("5 min", 300), ("10 min", 600),
+    ("15 min", 900), ("30 min", 1800), ("Off", 0),
+])
+DEFAULT_CHECK_INTERVAL = 300  # 5 min
+
+
+# -- Helpers -------------------------------------------------------------------
+
+def friendly_name(exe, title=""):
+    """Return (display_name, category) for an exe. Falls back to cleaned exe name."""
+    if exe in FRIENDLY_NAMES:
+        return FRIENDLY_NAMES[exe]
+    clean = exe.replace(".exe", "").replace("_", " ").title()
+    return clean, "Other"
+
+
 def is_ai_window(title):
+    """Check if a window title matches known AI/LLM patterns."""
     t = title.lower()
     return any(p in t for p in AI_PATTERNS)
 
-def get_fg_info():
-    """Get foreground window info."""
-    try:
-        hwnd = win32gui.GetForegroundWindow()
+
+def categorize_window(exe, title):
+    """Return the category for a window, promoting AI-titled browser tabs to AI/LLM."""
+    _, cat = friendly_name(exe, title)
+    # If it is a browser but the title matches AI patterns, file under AI/LLM
+    if cat == "Browsers" and is_ai_window(title):
+        return "AI / LLM"
+    return cat
+
+
+def get_visible_windows():
+    """Enumerate all visible, reasonably-sized windows."""
+    results = []
+    def cb(hwnd, _):
+        if not win32gui.IsWindowVisible(hwnd):
+            return True
+        if win32gui.IsIconic(hwnd):
+            return True
         title = win32gui.GetWindowText(hwnd)
-        cls = win32gui.GetClassName(hwnd)
-        _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        exe = ""
+        if not title or title in SKIP_TITLES:
+            return True
+        # Skip tiny windows
         try:
-            exe = psutil.Process(pid).name()
-        except:
-            pass
-        return {"hwnd": hwnd, "title": title, "exe": exe, "pid": pid, "class": cls}
-    except:
-        return {"hwnd": 0, "title": "", "exe": "", "pid": 0, "class": ""}
+            r = win32gui.GetWindowRect(hwnd)
+            if (r[2] - r[0]) < 80 or (r[3] - r[1]) < 50:
+                return True
+        except Exception:
+            return True
+        # Get exe
+        try:
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            h = win32api.OpenProcess(0x0410, False, pid)
+            exe = os.path.basename(win32process.GetModuleFileNameEx(h, 0))
+            win32api.CloseHandle(h)
+        except Exception:
+            exe = "unknown"
+        results.append({"hwnd": hwnd, "title": title, "exe": exe})
+        return True
+    try:
+        win32gui.EnumWindows(cb, None)
+    except Exception:
+        pass
+    return results
 
 
-# ── Timer instance ────────────────────────────────────────────────────────────
-class TrackedTimer:
-    def __init__(self, name, hwnd=0, title="", exe=""):
-        self.id = f"t_{int(time.time()*1000)}"
-        self.name = name
+def window_key(info):
+    """Unique key for a window entry."""
+    return f"{info['exe']}|{info['title'][:80]}"
+
+
+def format_elapsed(seconds):
+    """Format seconds as human-readable elapsed time."""
+    s = int(seconds)
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    if h > 0:
+        return f"{h}h {m:02d}m {sec:02d}s"
+    return f"{m}m {sec:02d}s"
+
+
+def make_display_name(exe, title):
+    """Build a friendly display string for a window."""
+    fname, _ = friendly_name(exe, title)
+    # For browsers, append tab title trimmed
+    if exe.lower() in ("chrome.exe", "msedge.exe", "firefox.exe", "brave.exe",
+                        "opera.exe", "vivaldi.exe"):
+        # Strip common suffixes
+        short = title
+        for suffix in (" - Google Chrome", " - Microsoft Edge", " - Mozilla Firefox",
+                       " - Brave", " - Opera", " - Vivaldi", " -- Google Chrome",
+                       " -- Microsoft Edge"):
+            if short.endswith(suffix):
+                short = short[:-len(suffix)]
+                break
+        if len(short) > 50:
+            short = short[:47] + "..."
+        return f"{fname}: {short}"
+    # For other apps, use friendly name + short title context
+    if len(title) > 55:
+        title = title[:52] + "..."
+    # If the friendly name is basically the title, just use friendly name
+    if fname.lower() in title.lower() and len(title) < 40:
+        return title
+    return f"{fname} -- {title}" if title != fname else fname
+
+
+# -- Timer data ----------------------------------------------------------------
+
+class WindowTimer:
+    """Timer state for a single tracked window."""
+    def __init__(self, key, display_name, hwnd, exe, title):
+        self.key = key
+        self.display_name = display_name
         self.hwnd = hwnd
-        self.window_title = title
         self.exe = exe
-        self.started = datetime.now()
-        self.elapsed = 0.0        # seconds
+        self.title = title
+        self.elapsed = 0.0
         self.running = True
         self.paused = False
-        self.check_interval = 300  # seconds (5 min default)
-        self.last_check = time.time()
-        self.log = []             # [{time, event, detail}]
-        self._add_log("started", f"Timer started for '{name}'")
-
-    def _add_log(self, event, detail=""):
-        self.log.append({
-            "time": datetime.now().isoformat(),
-            "event": event,
-            "detail": detail,
-        })
+        self.started_at = datetime.now()
+        self.last_check_time = time.time()
+        self.check_interval = DEFAULT_CHECK_INTERVAL
+        self.log = [{"time": datetime.now().isoformat(), "event": "started"}]
 
     def tick(self, dt):
         if self.running and not self.paused:
             self.elapsed += dt
 
-    def pause(self):
-        self.paused = True
-        self._add_log("paused")
-
-    def resume(self):
-        self.paused = False
-        self._add_log("resumed")
+    def toggle_pause(self):
+        if not self.running:
+            return
+        self.paused = not self.paused
+        event = "paused" if self.paused else "resumed"
+        self.log.append({"time": datetime.now().isoformat(), "event": event})
 
     def stop(self):
         self.running = False
         self.paused = False
-        self._add_log("stopped", f"Total: {self.format_elapsed()}")
-
-    def format_elapsed(self):
-        s = int(self.elapsed)
-        h, rem = divmod(s, 3600)
-        m, sec = divmod(rem, 60)
-        if h > 0:
-            return f"{h}h {m:02d}m {sec:02d}s"
-        return f"{m}m {sec:02d}s"
+        self.log.append({"time": datetime.now().isoformat(), "event": "stopped",
+                         "elapsed": format_elapsed(self.elapsed)})
 
     def needs_check(self):
-        if not self.running or self.paused:
+        if not self.running or self.paused or self.check_interval == 0:
             return False
-        return (time.time() - self.last_check) >= self.check_interval
+        return (time.time() - self.last_check_time) >= self.check_interval
 
     def checked(self):
-        self.last_check = time.time()
-        self._add_log("checked", "Periodic check-in")
-
-    def to_dict(self):
-        return {
-            "id": self.id, "name": self.name, "hwnd": self.hwnd,
-            "window_title": self.window_title, "exe": self.exe,
-            "started": self.started.isoformat(),
-            "elapsed": self.elapsed, "running": self.running,
-            "paused": self.paused, "check_interval": self.check_interval,
-            "log": self.log,
-        }
+        self.last_check_time = time.time()
 
 
-# ── Main app ─────────────────────────────────────────────────────────────────
+# -- UI colours ----------------------------------------------------------------
+
+BG = "#ffffff"
+BG_ALT = "#f8f9fa"
+HEADER_BG = "#f0f0f5"
+BORDER = "#e0e0e8"
+TEXT = "#222222"
+TEXT_DIM = "#888888"
+PURPLE = "#7c3aed"
+PURPLE_LIGHT = "#f3eeff"
+PURPLE_BORDER = "#c4b5fd"
+BLUE = "#2563eb"
+GREEN = "#16a34a"
+GREEN_BG = "#f0fdf4"
+ORANGE = "#ea580c"
+RED = "#dc2626"
+YELLOW_ICON = "#f59e0b"
+ACTIVE_BG = "#eef2ff"
+ACTIVE_BORDER = "#818cf8"
+ROW_HOVER = "#f1f5f9"
+
+
+# -- Main App -----------------------------------------------------------------
+
 class AITimerApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title(f"AI Timer v{__version__}")
-        self.root.configure(bg="#ffffff")
+        self.root.configure(bg=BG)
 
-        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        sw = self.root.winfo_screenwidth()
         w, h = 420, 580
         self.root.geometry(f"{w}x{h}+{sw - w - 20}+{40}")
-        self.root.minsize(360, 400)
+        self.root.minsize(380, 450)
 
-        self.timers = []          # list of TrackedTimer
-        self._timer_widgets = {}  # timer.id -> dict of widgets
-        self._active_log = []     # auto-tracked window log
-        self._last_fg_title = ""
+        # State
+        self.timers = {}         # key -> WindowTimer
+        self._last_snapshot = {} # key -> display_name (for diff-based refresh)
+        self._row_widgets = {}   # key -> dict of widgets in the row
         self._check_popup = None
-        self._lock = threading.Lock()
+        self._check_interval_setting = DEFAULT_CHECK_INTERVAL
 
         self._build_ui()
         self._setup_tray()
+
+        # Start background loops
         self._tick_loop()
-        self._fg_monitor()
+        self._refresh_window_list_loop()
+
+    # -- UI Build --------------------------------------------------------------
 
     def _build_ui(self):
-        # ── Header ──
-        hdr = tk.Frame(self.root, bg="#2d2740", padx=14, pady=10)
+        # Header
+        hdr = tk.Frame(self.root, bg=HEADER_BG, padx=14, pady=10)
         hdr.pack(fill="x")
 
-        tk.Label(hdr, text="⏱ AI Timer",
-                 font=("Segoe UI", 14, "bold"), fg="#f9e2af",
-                 bg="#2d2740").pack(side="left")
+        tk.Label(hdr, text="AI Timer", font=("Segoe UI", 14, "bold"),
+                 fg=TEXT, bg=HEADER_BG).pack(side="left")
 
-        self.active_label = tk.Label(hdr, text="",
-                                      font=("Segoe UI", 9), fg="#a6e3a1",
-                                      bg="#2d2740")
-        self.active_label.pack(side="right")
+        self.status_label = tk.Label(hdr, text="", font=("Segoe UI", 9),
+                                     fg=TEXT_DIM, bg=HEADER_BG)
+        self.status_label.pack(side="right")
 
-        # ── Auto-detect bar ──
-        detect_bar = tk.Frame(self.root, bg="#fff8e1", padx=14, pady=8)
-        detect_bar.pack(fill="x")
+        tk.Frame(self.root, bg=BORDER, height=1).pack(fill="x")
 
-        self.detect_label = tk.Label(detect_bar,
-                                      text="Watching for AI/LLM windows...",
-                                      font=("Segoe UI", 8), fg="#f57f17",
-                                      bg="#fff8e1", anchor="w")
-        self.detect_label.pack(side="left", fill="x", expand=True)
+        # Check-in interval bar
+        interval_bar = tk.Frame(self.root, bg=BG_ALT, padx=14, pady=6)
+        interval_bar.pack(fill="x")
 
-        tk.Button(detect_bar, text="⏱ Track Current Window",
-                  font=("Segoe UI", 8, "bold"), fg="#ffffff", bg="#f57f17",
-                  activebackground="#e65100", relief="flat", padx=10, pady=2,
-                  cursor="hand2",
-                  command=self._track_current).pack(side="right")
+        tk.Label(interval_bar, text="Check-in every:", font=("Segoe UI", 9),
+                 fg=TEXT_DIM, bg=BG_ALT).pack(side="left")
 
-        # ── Quick add ──
-        add_bar = tk.Frame(self.root, bg="#f8f8fc", padx=14, pady=8)
-        add_bar.pack(fill="x")
+        self._interval_var = tk.StringVar(value="5 min")
+        for label in CHECK_INTERVALS:
+            secs = CHECK_INTERVALS[label]
+            rb = tk.Radiobutton(interval_bar, text=label, variable=self._interval_var,
+                                value=label, font=("Segoe UI", 8), fg=TEXT,
+                                bg=BG_ALT, selectcolor=BG_ALT, activebackground=BG_ALT,
+                                indicatoron=0, padx=6, pady=2, relief="flat",
+                                overrelief="groove",
+                                command=lambda l=label: self._set_check_interval(l))
+            rb.pack(side="left", padx=2)
 
-        self.add_entry = tk.Entry(add_bar, font=("Segoe UI", 10),
-                                   relief="flat", bg="#ffffff",
-                                   highlightthickness=1,
-                                   highlightbackground="#e8e6f0",
-                                   highlightcolor="#6c5ce7")
-        self.add_entry.pack(side="left", fill="x", expand=True)
-        self.add_entry.insert(0, "Timer name...")
-        self.add_entry.bind("<FocusIn>", lambda e: (
-            self.add_entry.delete(0, "end") if self.add_entry.get() == "Timer name..." else None))
-        self.add_entry.bind("<Return>", lambda e: self._add_named())
+        tk.Frame(self.root, bg=BORDER, height=1).pack(fill="x")
 
-        tk.Button(add_bar, text="+ Add", font=("Segoe UI", 9, "bold"),
-                  fg="#ffffff", bg="#6c5ce7", relief="flat", padx=14, pady=4,
-                  cursor="hand2",
-                  command=self._add_named).pack(side="right", padx=(8, 0))
-
-        # ── Divider ──
-        tk.Frame(self.root, bg="#e8e6f0", height=2).pack(fill="x")
-
-        # ── Timer list (scrollable) ──
-        container = tk.Frame(self.root, bg="#ffffff")
+        # Scrollable window list area
+        container = tk.Frame(self.root, bg=BG)
         container.pack(fill="both", expand=True)
 
-        canvas = tk.Canvas(container, bg="#ffffff", highlightthickness=0)
-        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        self.timer_frame = tk.Frame(canvas, bg="#ffffff")
+        self.canvas = tk.Canvas(container, bg=BG, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=self.canvas.yview)
+        self.list_frame = tk.Frame(self.canvas, bg=BG)
 
-        self.timer_frame.bind("<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=self.timer_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.pack(side="left", fill="both", expand=True)
+        self.list_frame.bind("<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self._canvas_win = self.canvas.create_window((0, 0), window=self.list_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas.bind("<Configure>",
+            lambda e: self.canvas.itemconfig(self._canvas_win, width=e.width))
+        self.canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
         def _wheel(e):
-            canvas.yview_scroll(int(-1*(e.delta/120)), "units")
-        canvas.bind_all("<MouseWheel>", _wheel)
+            self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        self.canvas.bind_all("<MouseWheel>", _wheel)
 
-        # ── Footer ──
-        footer = tk.Frame(self.root, bg="#faf9ff", padx=14, pady=8)
+        # Footer
+        footer = tk.Frame(self.root, bg=HEADER_BG, padx=14, pady=8)
         footer.pack(fill="x")
 
-        tk.Button(footer, text="📤 Export Log", font=("Segoe UI", 8),
-                  fg="#6c5ce7", bg="#f0eef8", relief="flat", padx=10,
-                  cursor="hand2",
-                  command=self._export_log).pack(side="left")
+        export_btn = tk.Label(footer, text="  Export Log  ", font=("Segoe UI", 9, "bold"),
+                              fg=BLUE, bg="#e8edf5", cursor="hand2", padx=8, pady=3)
+        export_btn.pack(side="left")
+        export_btn.bind("<Button-1>", lambda e: self._export_log())
+        export_btn.bind("<Enter>", lambda e: export_btn.configure(bg="#d0d8e8"))
+        export_btn.bind("<Leave>", lambda e: export_btn.configure(bg="#e8edf5"))
 
-        tk.Button(footer, text="🗑 Clear Finished", font=("Segoe UI", 8),
-                  fg="#888", bg="#f0f0f5", relief="flat", padx=10,
-                  cursor="hand2",
-                  command=self._clear_finished).pack(side="left", padx=4)
-
-        self.total_label = tk.Label(footer, text="",
-                                     font=("Consolas", 9), fg="#888",
-                                     bg="#faf9ff")
+        self.total_label = tk.Label(footer, text="", font=("Segoe UI", 9),
+                                     fg=TEXT_DIM, bg=HEADER_BG)
         self.total_label.pack(side="right")
 
-    def _track_current(self):
-        """Start a timer for the current foreground window."""
-        info = get_fg_info()
-        title = info["title"]
-        if not title or "AI Timer" in title:
-            return
+    # -- Check interval --------------------------------------------------------
 
-        # Don't duplicate
-        for t in self.timers:
-            if t.running and t.window_title == title:
-                self._flash_status(f"Already tracking: {t.name}")
+    def _set_check_interval(self, label):
+        self._check_interval_setting = CHECK_INTERVALS[label]
+        # Apply to all running timers
+        for t in self.timers.values():
+            if t.running:
+                t.check_interval = self._check_interval_setting
+
+    # -- Window list -----------------------------------------------------------
+
+    def _refresh_window_list(self):
+        """Scan open windows, diff against last snapshot, rebuild if changed."""
+        windows = get_visible_windows()
+
+        # Build new snapshot: key -> {display, exe, title, hwnd, category}
+        new_snapshot = {}
+        for info in windows:
+            title = info["title"]
+            exe = info["exe"]
+            # Skip ourselves
+            if f"AI Timer v{__version__}" in title:
+                continue
+            key = window_key(info)
+            display = make_display_name(exe, title)
+            cat = categorize_window(exe, title)
+            new_snapshot[key] = {
+                "display": display, "exe": exe, "title": title,
+                "hwnd": info["hwnd"], "category": cat,
+            }
+
+        # Diff: only rebuild if windows changed
+        old_keys = set(self._last_snapshot.keys())
+        new_keys = set(new_snapshot.keys())
+        if old_keys == new_keys:
+            # Check if display names changed
+            changed = False
+            for k in new_keys:
+                if self._last_snapshot.get(k) != new_snapshot[k].get("display"):
+                    changed = True
+                    break
+            if not changed:
+                # Just update hwnd refs for timers (windows can get new handles)
+                for k, info in new_snapshot.items():
+                    if k in self.timers:
+                        self.timers[k].hwnd = info["hwnd"]
                 return
 
-        # Auto-name
-        name = title[:40]
-        if is_ai_window(title):
-            for p in AI_PATTERNS:
-                if p in title.lower():
-                    name = f"{p.title()} chat"
-                    break
+        self._last_snapshot = {k: v["display"] for k, v in new_snapshot.items()}
+        self._rebuild_list(new_snapshot)
 
-        timer = TrackedTimer(name, info["hwnd"], title, info["exe"])
-        self.timers.append(timer)
-        self._rebuild_timer_list()
-        self._flash_status(f"Tracking: {name}")
-
-    def _add_named(self):
-        """Add a timer with a custom name, linked to current window."""
-        name = self.add_entry.get().strip()
-        if not name or name == "Timer name...":
-            return
-
-        info = get_fg_info()
-        timer = TrackedTimer(name, info["hwnd"], info["title"], info["exe"])
-        self.timers.append(timer)
-        self.add_entry.delete(0, "end")
-        self.add_entry.insert(0, "Timer name...")
-        self._rebuild_timer_list()
-
-    def _rebuild_timer_list(self):
-        """Redraw all timer cards."""
-        for child in self.timer_frame.winfo_children():
+    def _rebuild_list(self, snapshot):
+        """Destroy and rebuild the entire window list from snapshot."""
+        for child in self.list_frame.winfo_children():
             child.destroy()
-        self._timer_widgets = {}
+        self._row_widgets = {}
 
-        if not self.timers:
-            tk.Label(self.timer_frame, text="No timers yet.\n\n"
-                     "Click 'Track Current Window' or type a name and hit +",
-                     font=("Segoe UI", 10), fg="#aaa", bg="#ffffff",
-                     justify="center", pady=40).pack()
+        if not snapshot:
+            tk.Label(self.list_frame, text="No open windows detected",
+                     font=("Segoe UI", 11), fg=TEXT_DIM, bg=BG,
+                     pady=40).pack()
             return
 
-        for timer in self.timers:
-            self._make_timer_card(timer)
+        # Group by category
+        groups = {}
+        for key, info in snapshot.items():
+            cat = info["category"]
+            if cat not in groups:
+                groups[cat] = []
+            groups[cat].append((key, info))
 
-    def _make_timer_card(self, timer):
-        """Build a single timer card widget."""
-        is_ai = is_ai_window(timer.window_title)
+        # Sort each group alphabetically by display name
+        for cat in groups:
+            groups[cat].sort(key=lambda x: x[1]["display"].lower())
 
-        # Card colours
-        if not timer.running:
-            border_col = "#ddd"
-            bg = "#f8f8f8"
-        elif timer.paused:
-            border_col = "#f9e2af"
-            bg = "#fffdf5"
-        elif is_ai:
-            border_col = "#cba6f7"
-            bg = "#faf5ff"
+        # Render in category order
+        for cat in CATEGORY_ORDER:
+            if cat not in groups:
+                continue
+            self._render_group(cat, groups[cat])
+
+        # Any categories not in the predefined order
+        for cat in sorted(groups.keys()):
+            if cat not in CATEGORY_ORDER:
+                self._render_group(cat, groups[cat])
+
+    def _render_group(self, category, items):
+        """Render a category header and its window rows."""
+        is_ai_group = (category == "AI / LLM")
+
+        # Category header
+        hdr_bg = PURPLE_LIGHT if is_ai_group else BG_ALT
+        hdr_fg = PURPLE if is_ai_group else TEXT_DIM
+        hdr = tk.Frame(self.list_frame, bg=hdr_bg, padx=14, pady=4)
+        hdr.pack(fill="x")
+        prefix = "* " if is_ai_group else ""
+        tk.Label(hdr, text=f"{prefix}{category}", font=("Segoe UI", 9, "bold"),
+                 fg=hdr_fg, bg=hdr_bg).pack(side="left")
+
+        # Window rows
+        for key, info in items:
+            self._render_row(key, info, is_ai_group)
+
+    def _render_row(self, key, info, is_ai_group):
+        """Render a single window row. Clickable to start/pause timer."""
+        timer = self.timers.get(key)
+        has_timer = timer is not None and timer.running
+
+        # Row container
+        if has_timer:
+            row_bg = PURPLE_LIGHT if is_ai_group else ACTIVE_BG
+            border_col = PURPLE_BORDER if is_ai_group else ACTIVE_BORDER
         else:
-            border_col = "#89b4fa"
-            bg = "#f5f8ff"
+            row_bg = BG
+            border_col = BORDER
 
-        card = tk.Frame(self.timer_frame, bg=bg, highlightthickness=1,
-                        highlightbackground=border_col)
-        card.pack(fill="x", padx=12, pady=4)
+        row_outer = tk.Frame(self.list_frame, bg=border_col)
+        row_outer.pack(fill="x", padx=8, pady=1)
 
-        # Left accent
-        tk.Frame(card, bg=border_col, width=4).pack(side="left", fill="y")
+        row = tk.Frame(row_outer, bg=row_bg, padx=10, pady=6)
+        row.pack(fill="both", expand=True, padx=(0, 0), pady=(0, 0))
 
-        inner = tk.Frame(card, bg=bg, padx=10, pady=8)
-        inner.pack(side="left", fill="both", expand=True)
+        # Left accent for AI windows
+        if is_ai_group:
+            accent = tk.Frame(row_outer, bg=PURPLE, width=3)
+            accent.pack(side="left", fill="y")
+            accent.lower()  # put behind row
 
-        # Top row: name + elapsed
-        top = tk.Frame(inner, bg=bg)
+        # Top line: display name
+        top = tk.Frame(row, bg=row_bg)
         top.pack(fill="x")
 
-        name_text = timer.name
-        if is_ai:
-            name_text = f"🤖 {timer.name}"
+        name_fg = PURPLE if is_ai_group else TEXT
+        name_label = tk.Label(top, text=info["display"], font=("Segoe UI", 10),
+                              fg=name_fg, bg=row_bg, anchor="w", cursor="hand2")
+        name_label.pack(side="left", fill="x", expand=True)
 
-        tk.Label(top, text=name_text,
-                 font=("Segoe UI", 10, "bold"), fg="#2d2740",
-                 bg=bg, anchor="w").pack(side="left")
+        # Click the name to start/toggle timer
+        name_label.bind("<Button-1>", lambda e, k=key, i=info: self._toggle_timer(k, i))
 
-        elapsed_label = tk.Label(top, text=timer.format_elapsed(),
-                                  font=("Consolas", 12, "bold"),
-                                  fg="#6c5ce7" if timer.running else "#aaa",
-                                  bg=bg)
-        elapsed_label.pack(side="right")
+        # Hover effect on the name
+        def _enter(e, bg=row_bg):
+            name_label.configure(bg=ROW_HOVER)
+        def _leave(e, bg=row_bg):
+            name_label.configure(bg=bg)
+        name_label.bind("<Enter>", _enter)
+        name_label.bind("<Leave>", _leave)
 
-        # Status + window
-        status = "⏸ Paused" if timer.paused else ("⏹ Done" if not timer.running else "⏱ Running")
-        status_color = "#f57f17" if timer.paused else ("#aaa" if not timer.running else "#00b894")
+        # If timer is active, show elapsed + controls
+        if has_timer:
+            # Elapsed time (big, bold)
+            elapsed_label = tk.Label(top, text=format_elapsed(timer.elapsed),
+                                      font=("Segoe UI", 13, "bold"),
+                                      fg=PURPLE if is_ai_group else BLUE,
+                                      bg=row_bg)
+            elapsed_label.pack(side="right")
 
-        info_frame = tk.Frame(inner, bg=bg)
-        info_frame.pack(fill="x", pady=(2, 0))
+            # Control row
+            ctrl = tk.Frame(row, bg=row_bg)
+            ctrl.pack(fill="x", pady=(4, 0))
 
-        tk.Label(info_frame, text=status,
-                 font=("Segoe UI", 8, "bold"), fg=status_color,
-                 bg=bg).pack(side="left")
-
-        win_title = timer.window_title[:35] + "…" if len(timer.window_title) > 35 else timer.window_title
-        tk.Label(info_frame, text=f"  {timer.exe} — {win_title}",
-                 font=("Segoe UI", 8), fg="#888", bg=bg).pack(side="left", padx=4)
-
-        # Button row
-        btn_row = tk.Frame(inner, bg=bg)
-        btn_row.pack(fill="x", pady=(6, 0))
-
-        if timer.running:
+            # Status indicator
             if timer.paused:
-                tk.Button(btn_row, text="▶ Resume", font=("Segoe UI", 8),
-                          fg="#ffffff", bg="#00b894", relief="flat", padx=8,
-                          cursor="hand2",
-                          command=lambda t=timer: self._resume(t)).pack(side="left", padx=(0,4))
+                status_text = "PAUSED"
+                status_fg = ORANGE
             else:
-                tk.Button(btn_row, text="⏸ Pause", font=("Segoe UI", 8),
-                          fg="#ffffff", bg="#f57f17", relief="flat", padx=8,
-                          cursor="hand2",
-                          command=lambda t=timer: self._pause(t)).pack(side="left", padx=(0,4))
+                status_text = "RUNNING"
+                status_fg = GREEN
+            tk.Label(ctrl, text=status_text, font=("Segoe UI", 8, "bold"),
+                     fg=status_fg, bg=row_bg).pack(side="left")
 
-            tk.Button(btn_row, text="⏹ Stop", font=("Segoe UI", 8),
-                      fg="#ffffff", bg="#e64553", relief="flat", padx=8,
-                      cursor="hand2",
-                      command=lambda t=timer: self._stop(t)).pack(side="left", padx=(0,4))
+            # Pause/Resume button
+            if timer.paused:
+                pr_btn = tk.Label(ctrl, text="  Resume  ", font=("Segoe UI", 8, "bold"),
+                                  fg="#ffffff", bg=GREEN, cursor="hand2", padx=4, pady=1)
+            else:
+                pr_btn = tk.Label(ctrl, text="  Pause  ", font=("Segoe UI", 8, "bold"),
+                                  fg="#ffffff", bg=ORANGE, cursor="hand2", padx=4, pady=1)
+            pr_btn.pack(side="left", padx=(8, 4))
+            pr_btn.bind("<Button-1>", lambda e, k=key: self._pause_resume(k))
 
-        # Jump back button (always available)
-        tk.Button(btn_row, text="↗ Jump", font=("Segoe UI", 8),
-                  fg="#6c5ce7", bg="#f0eef8", relief="flat", padx=8,
-                  cursor="hand2",
-                  command=lambda t=timer: self._jump(t)).pack(side="left", padx=(0,4))
+            # Stop button
+            stop_btn = tk.Label(ctrl, text="  Stop  ", font=("Segoe UI", 8, "bold"),
+                                fg="#ffffff", bg=RED, cursor="hand2", padx=4, pady=1)
+            stop_btn.pack(side="left", padx=(0, 4))
+            stop_btn.bind("<Button-1>", lambda e, k=key: self._stop_timer(k))
 
-        # Check interval selector
-        if timer.running:
-            intervals = {"2m": 120, "5m": 300, "10m": 600, "15m": 900, "30m": 1800, "Off": 0}
-            current = "Off"
-            for label, secs in intervals.items():
-                if secs == timer.check_interval:
-                    current = label
-                    break
+            # Jump button
+            jump_btn = tk.Label(ctrl, text="  Jump  ", font=("Segoe UI", 8, "bold"),
+                                fg=PURPLE, bg="#ede9fe", cursor="hand2", padx=4, pady=1)
+            jump_btn.pack(side="left", padx=(0, 4))
+            jump_btn.bind("<Button-1>", lambda e, k=key: self._jump_to(k))
 
-            tk.Label(btn_row, text="Check:", font=("Segoe UI", 7),
-                     fg="#888", bg=bg).pack(side="right")
+            # Store widget refs for live elapsed updates
+            self._row_widgets[key] = {"elapsed": elapsed_label}
+        else:
+            # Not timed -- show a subtle "click to time" hint
+            hint = tk.Label(top, text="click to time", font=("Segoe UI", 8),
+                            fg=TEXT_DIM, bg=row_bg)
+            hint.pack(side="right")
+            self._row_widgets[key] = {}
 
-            def _cycle_check(t=timer):
-                opts = [120, 300, 600, 900, 1800, 0]
-                try:
-                    idx = opts.index(t.check_interval)
-                except ValueError:
-                    idx = -1
-                t.check_interval = opts[(idx + 1) % len(opts)]
-                self._rebuild_timer_list()
+    # -- Timer actions ---------------------------------------------------------
 
-            check_text = f"every {current}" if current != "Off" else "Off"
-            tk.Button(btn_row, text=check_text, font=("Segoe UI", 7),
-                      fg="#6c5ce7", bg="#f0eef8", relief="flat", padx=6,
-                      cursor="hand2",
-                      command=_cycle_check).pack(side="right", padx=2)
+    def _toggle_timer(self, key, info):
+        """Click handler: start a new timer, or pause/resume existing."""
+        if key in self.timers and self.timers[key].running:
+            self.timers[key].toggle_pause()
+        else:
+            display = info["display"]
+            t = WindowTimer(key, display, info["hwnd"], info["exe"], info["title"])
+            t.check_interval = self._check_interval_setting
+            self.timers[key] = t
+        # Force a list rebuild to show new state
+        self._force_rebuild()
 
-        # Store refs for live updates
-        self._timer_widgets[timer.id] = {
-            "elapsed": elapsed_label,
-            "card": card,
-        }
+    def _pause_resume(self, key):
+        if key in self.timers:
+            self.timers[key].toggle_pause()
+            self._force_rebuild()
 
-    def _pause(self, timer):
-        timer.pause()
-        self._rebuild_timer_list()
+    def _stop_timer(self, key):
+        if key in self.timers:
+            self.timers[key].stop()
+            self._force_rebuild()
 
-    def _resume(self, timer):
-        timer.resume()
-        self._rebuild_timer_list()
-
-    def _stop(self, timer):
-        timer.stop()
-        self._rebuild_timer_list()
-
-    def _jump(self, timer):
-        """Try to bring the tracked window back to foreground."""
-        # First try the original hwnd
+    def _jump_to(self, key):
+        """Bring the tracked window to the foreground."""
+        timer = self.timers.get(key)
+        if not timer:
+            return
+        # Try the stored hwnd
         try:
             if timer.hwnd and win32gui.IsWindow(timer.hwnd):
+                win32gui.ShowWindow(timer.hwnd, win32con.SW_RESTORE)
                 win32gui.SetForegroundWindow(timer.hwnd)
-                timer._add_log("jumped", "Returned to original window")
                 return
-        except:
+        except Exception:
             pass
-
-        # Search by title substring
-        target = timer.window_title
+        # Fallback: search by title substring
+        target = timer.title
         if not target:
             return
-
         found = []
         def cb(hwnd, _):
             if win32gui.IsWindowVisible(hwnd):
                 t = win32gui.GetWindowText(hwnd)
-                # Match by significant portion of title
-                if len(target) > 10 and target[:20].lower() in t.lower():
-                    found.append(hwnd)
-                elif target.lower() == t.lower():
+                if target[:25].lower() in t.lower():
                     found.append(hwnd)
             return True
         try:
             win32gui.EnumWindows(cb, None)
-        except:
+        except Exception:
             pass
-
         if found:
             try:
+                win32gui.ShowWindow(found[0], win32con.SW_RESTORE)
                 win32gui.SetForegroundWindow(found[0])
-                timer._add_log("jumped", f"Found and focused matching window")
-            except:
+            except Exception:
                 pass
-        else:
-            self._flash_status(f"Window not found: {target[:30]}")
 
-    def _clear_finished(self):
-        self.timers = [t for t in self.timers if t.running]
-        self._rebuild_timer_list()
+    def _force_rebuild(self):
+        """Force a full list rebuild by clearing the snapshot cache."""
+        self._last_snapshot = {}
 
-    def _export_log(self):
-        """Export all timers + auto-log to markdown."""
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = LOG_DIR / f"timer_log_{ts}.md"
+    # -- Background loops ------------------------------------------------------
 
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(f"# AI Timer Log — {ts}\n\n")
-
-            total = sum(t.elapsed for t in self.timers)
-            ai_total = sum(t.elapsed for t in self.timers if is_ai_window(t.window_title))
-            f.write(f"**Total tracked time:** {int(total//3600)}h {int((total%3600)//60)}m\n")
-            f.write(f"**AI/LLM time:** {int(ai_total//3600)}h {int((ai_total%3600)//60)}m\n\n")
-
-            f.write("## Timers\n\n")
-            f.write("| Name | Window | Time | Status |\n")
-            f.write("|------|--------|------|--------|\n")
-            for t in self.timers:
-                status = "Running" if t.running and not t.paused else ("Paused" if t.paused else "Done")
-                f.write(f"| {t.name} | {t.window_title[:30]} | {t.format_elapsed()} | {status} |\n")
-
-            f.write("\n## Detailed Logs\n\n")
-            for t in self.timers:
-                f.write(f"### {t.name}\n\n")
-                for entry in t.log:
-                    f.write(f"- **{entry['time']}** [{entry['event']}] {entry.get('detail','')}\n")
-                f.write("\n")
-
-            if self._active_log:
-                f.write("## Auto-tracked Window Log\n\n")
-                f.write("| Time | Window | Exe |\n")
-                f.write("|------|--------|-----|\n")
-                for entry in self._active_log[-100:]:
-                    f.write(f"| {entry['time']} | {entry['title'][:40]} | {entry['exe']} |\n")
-
-        os.startfile(str(path))
-        self._flash_status(f"Exported to {path.name}")
-
-    def _flash_status(self, text):
-        try:
-            self.active_label.config(text=text)
-            self.root.after(4000, lambda: self.active_label.config(text=""))
-        except:
-            pass
-
-    # ── Background loops ──────────────────────────────────────────────────────
     def _tick_loop(self):
-        """Update all timers every second."""
+        """Tick all running timers every second. Update elapsed labels."""
         try:
-            for timer in self.timers:
-                timer.tick(1.0)
-                # Update elapsed display
-                if timer.id in self._timer_widgets:
-                    try:
-                        self._timer_widgets[timer.id]["elapsed"].config(
-                            text=timer.format_elapsed())
-                    except tk.TclError:
-                        pass
+            active_count = 0
+            total_elapsed = 0.0
 
-                # Check-in popup
-                if timer.needs_check():
-                    timer.checked()
-                    self._show_check_popup(timer)
+            for key, timer in list(self.timers.items()):
+                if timer.running:
+                    timer.tick(1.0)
+                    active_count += (0 if timer.paused else 1)
+                    total_elapsed += timer.elapsed
 
-            # Total in footer
-            total = sum(t.elapsed for t in self.timers if t.running)
-            running = sum(1 for t in self.timers if t.running and not t.paused)
-            if running:
-                h, rem = divmod(int(total), 3600)
-                m, s = divmod(rem, 60)
-                self.total_label.config(text=f"{running} active — {h}h {m:02d}m")
+                    # Live-update the elapsed label if visible
+                    wid = self._row_widgets.get(key, {})
+                    if "elapsed" in wid:
+                        try:
+                            wid["elapsed"].config(text=format_elapsed(timer.elapsed))
+                        except tk.TclError:
+                            pass
+
+                    # Check-in popup
+                    if timer.needs_check():
+                        timer.checked()
+                        self._show_check_popup(timer)
+
+            # Update footer totals
+            if active_count > 0:
+                self.total_label.config(
+                    text=f"{active_count} active -- {format_elapsed(total_elapsed)}")
             else:
-                self.total_label.config(text="")
+                running_timers = [t for t in self.timers.values() if t.running]
+                if running_timers:
+                    self.total_label.config(text="All paused")
+                else:
+                    self.total_label.config(text="")
+
+            # Update status
+            ai_timers = [t for t in self.timers.values()
+                         if t.running and is_ai_window(t.title)]
+            if ai_timers:
+                names = ", ".join(t.display_name[:20] for t in ai_timers[:2])
+                self.status_label.config(text=f"AI: {names}", fg=PURPLE)
+            elif active_count > 0:
+                self.status_label.config(text=f"{active_count} timing", fg=GREEN)
+            else:
+                self.status_label.config(text="", fg=TEXT_DIM)
 
             self.root.after(1000, self._tick_loop)
         except tk.TclError:
             pass
 
-    def _fg_monitor(self):
-        """Monitor foreground window changes. Auto-detect AI windows."""
+    def _refresh_window_list_loop(self):
+        """Refresh the window list every 3 seconds (diff-based)."""
         try:
-            info = get_fg_info()
-            title = info["title"]
-
-            if title and title != self._last_fg_title:
-                self._last_fg_title = title
-                self._active_log.append({
-                    "time": datetime.now().strftime("%H:%M:%S"),
-                    "title": title,
-                    "exe": info["exe"],
-                })
-                # Keep log bounded
-                if len(self._active_log) > 500:
-                    self._active_log = self._active_log[-300:]
-
-                # Auto-detect AI windows
-                if is_ai_window(title) and "AI Timer" not in title:
-                    already = any(t.running and t.window_title == title for t in self.timers)
-                    if not already:
-                        self.detect_label.config(
-                            text=f"🤖 Detected: {title[:40]}",
-                            fg="#e65100")
-                    else:
-                        self.detect_label.config(
-                            text=f"⏱ Tracking: {title[:40]}",
-                            fg="#00b894")
-                else:
-                    self.detect_label.config(
-                        text=f"Active: {title[:45]}",
-                        fg="#888")
-
-            self.root.after(1000, self._fg_monitor)
+            self._refresh_window_list()
+            self.root.after(3000, self._refresh_window_list_loop)
         except tk.TclError:
             pass
 
+    # -- Check-in popup --------------------------------------------------------
+
     def _show_check_popup(self, timer):
-        """Show a non-blocking check-in popup for a timer."""
+        """Non-blocking check-in popup for a running timer."""
         if self._check_popup:
             try:
                 self._check_popup.destroy()
-            except:
+            except Exception:
                 pass
 
         popup = tk.Toplevel(self.root)
         popup.title("Check-in")
-        popup.configure(bg="#ffffff")
+        popup.configure(bg=BG)
         popup.attributes("-topmost", True)
-        popup.overrideredirect(True)
 
         sw = popup.winfo_screenwidth()
-        w, h = 360, 140
+        w, h = 380, 150
         popup.geometry(f"{w}x{h}+{sw - w - 20}+{20}")
+        popup.resizable(False, False)
 
         self._check_popup = popup
 
-        # Card
-        accent = "#cba6f7" if is_ai_window(timer.window_title) else "#89b4fa"
+        is_ai = is_ai_window(timer.title)
+        accent = PURPLE if is_ai else BLUE
+
+        # Top accent line
         tk.Frame(popup, bg=accent, height=4).pack(fill="x")
 
-        body = tk.Frame(popup, bg="#ffffff", padx=14, pady=10)
+        body = tk.Frame(popup, bg=BG, padx=16, pady=12)
         body.pack(fill="both", expand=True)
 
-        tk.Label(body, text=f"⏱ Check-in: {timer.name}",
-                 font=("Segoe UI", 11, "bold"), fg="#2d2740",
-                 bg="#ffffff").pack(anchor="w")
-        tk.Label(body, text=f"Running for {timer.format_elapsed()}. Still going?",
-                 font=("Segoe UI", 9), fg="#666", bg="#ffffff").pack(anchor="w", pady=4)
+        question = f"Still working on {timer.display_name[:35]}?"
+        tk.Label(body, text=question, font=("Segoe UI", 11, "bold"),
+                 fg=TEXT, bg=BG, wraplength=340, justify="left").pack(anchor="w")
 
-        btn_row = tk.Frame(body, bg="#ffffff")
-        btn_row.pack(fill="x", pady=(6, 0))
+        tk.Label(body, text=f"{format_elapsed(timer.elapsed)} elapsed",
+                 font=("Segoe UI", 10), fg=TEXT_DIM, bg=BG).pack(anchor="w", pady=(2, 8))
 
-        def _still_going():
-            timer._add_log("confirmed", "User confirmed still active")
+        btn_row = tk.Frame(body, bg=BG)
+        btn_row.pack(fill="x")
+
+        def _still():
+            timer.checked()
             popup.destroy()
 
         def _done():
             timer.stop()
             popup.destroy()
-            self._rebuild_timer_list()
+            self._force_rebuild()
 
-        def _jump_there():
-            self._jump(timer)
+        def _jump():
+            self._jump_to(timer.key)
             popup.destroy()
 
-        tk.Button(btn_row, text="✓ Still going", font=("Segoe UI", 9, "bold"),
-                  fg="#ffffff", bg="#00b894", relief="flat", padx=14, pady=4,
-                  cursor="hand2", command=_still_going).pack(side="left", padx=(0,4))
-        tk.Button(btn_row, text="⏹ Done", font=("Segoe UI", 9),
-                  fg="#ffffff", bg="#e64553", relief="flat", padx=10, pady=4,
-                  cursor="hand2", command=_done).pack(side="left", padx=(0,4))
-        tk.Button(btn_row, text="↗ Jump", font=("Segoe UI", 9),
-                  fg="#6c5ce7", bg="#f0eef8", relief="flat", padx=10, pady=4,
-                  cursor="hand2", command=_jump_there).pack(side="left")
+        still_btn = tk.Label(btn_row, text="  Still Going  ", font=("Segoe UI", 9, "bold"),
+                             fg="#ffffff", bg=GREEN, cursor="hand2", padx=8, pady=4)
+        still_btn.pack(side="left", padx=(0, 6))
+        still_btn.bind("<Button-1>", lambda e: _still())
 
-        # Auto-dismiss after 30s
-        popup.after(30000, lambda: (popup.destroy() if popup.winfo_exists() else None))
+        done_btn = tk.Label(btn_row, text="  Done  ", font=("Segoe UI", 9, "bold"),
+                            fg="#ffffff", bg=RED, cursor="hand2", padx=8, pady=4)
+        done_btn.pack(side="left", padx=(0, 6))
+        done_btn.bind("<Button-1>", lambda e: _done())
 
-    # ── Tray ──────────────────────────────────────────────────────────────────
+        jump_btn = tk.Label(btn_row, text="  Jump  ", font=("Segoe UI", 9, "bold"),
+                            fg=PURPLE, bg="#ede9fe", cursor="hand2", padx=8, pady=4)
+        jump_btn.pack(side="left")
+        jump_btn.bind("<Button-1>", lambda e: _jump())
+
+        # Auto-dismiss after 45 seconds
+        popup.after(45000, lambda: (popup.destroy() if popup.winfo_exists() else None))
+
+    # -- Export ----------------------------------------------------------------
+
+    def _export_log(self):
+        """Export time breakdown to a markdown file."""
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = LOG_DIR / f"timer_log_{ts}.md"
+
+        all_timers = list(self.timers.values())
+        if not all_timers:
+            self.status_label.config(text="Nothing to export", fg=ORANGE)
+            self.root.after(3000, lambda: self.status_label.config(text="", fg=TEXT_DIM))
+            return
+
+        total = sum(t.elapsed for t in all_timers)
+        ai_total = sum(t.elapsed for t in all_timers if is_ai_window(t.title))
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(f"# AI Timer Log -- {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n")
+            f.write(f"**Total tracked time:** {format_elapsed(total)}\n")
+            f.write(f"**AI/LLM time:** {format_elapsed(ai_total)}\n\n")
+
+            f.write("## Time Breakdown\n\n")
+            f.write("| Window | Category | Time | Status |\n")
+            f.write("|--------|----------|------|--------|\n")
+
+            sorted_timers = sorted(all_timers, key=lambda t: t.elapsed, reverse=True)
+            for t in sorted_timers:
+                cat = categorize_window(t.exe, t.title)
+                status = "Running" if (t.running and not t.paused) else (
+                    "Paused" if t.paused else "Stopped")
+                f.write(f"| {t.display_name[:40]} | {cat} | {format_elapsed(t.elapsed)} | {status} |\n")
+
+            f.write("\n## Event Log\n\n")
+            for t in sorted_timers:
+                f.write(f"### {t.display_name}\n\n")
+                for entry in t.log:
+                    f.write(f"- {entry['time']} -- {entry['event']}")
+                    if "elapsed" in entry:
+                        f.write(f" ({entry['elapsed']})")
+                    f.write("\n")
+                f.write("\n")
+
+        try:
+            os.startfile(str(path))
+        except Exception:
+            pass
+        self.status_label.config(text=f"Exported: {path.name}", fg=GREEN)
+        self.root.after(4000, lambda: self.status_label.config(text="", fg=TEXT_DIM))
+
+    # -- System tray -----------------------------------------------------------
+
     def _setup_tray(self):
-        import pystray
-
+        """Yellow clock system tray icon."""
         img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
-        draw.ellipse([6, 6, 58, 58], fill="#f9e2af")
-        draw.ellipse([14, 14, 50, 50], fill="#2d2740")
+        # Yellow filled circle
+        draw.ellipse([4, 4, 60, 60], fill="#f59e0b")
+        # Inner dark circle
+        draw.ellipse([12, 12, 52, 52], fill="#1e1e2e")
         # Clock hands
-        draw.line([(32, 32), (32, 18)], fill="#f9e2af", width=3)
-        draw.line([(32, 32), (42, 32)], fill="#f9e2af", width=2)
+        draw.line([(32, 32), (32, 18)], fill="#f59e0b", width=3)
+        draw.line([(32, 32), (44, 32)], fill="#f59e0b", width=2)
+        # Center dot
+        draw.ellipse([29, 29, 35, 35], fill="#f59e0b")
 
         menu = pystray.Menu(
-            pystray.MenuItem("⏱ Track Current Window", lambda: self.root.after(0, self._track_current)),
-            pystray.MenuItem("Show Timer", lambda: self.root.after(0, self._show_window)),
+            pystray.MenuItem("Show AI Timer", lambda: self.root.after(0, self._show_window),
+                             default=True),
+            pystray.MenuItem("Export Log", lambda: self.root.after(0, self._export_log)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("📤 Export Log", lambda: self.root.after(0, self._export_log)),
             pystray.MenuItem("Quit", lambda: self._quit()),
         )
 
-        self.tray = pystray.Icon("aitimer", img,
-                                  f"AI Timer v{__version__}", menu=menu)
+        self.tray = pystray.Icon("aitimer", img, f"AI Timer v{__version__}", menu=menu)
         threading.Thread(target=self.tray.run, daemon=True).start()
 
     def _show_window(self):
@@ -676,14 +831,19 @@ class AITimerApp:
         self.root.after(300, lambda: self.root.attributes("-topmost", False))
 
     def _quit(self):
-        # Auto-export on quit
+        # Auto-export on quit if there are timers
         if self.timers:
             try:
                 self._export_log()
-            except:
+            except Exception:
                 pass
-        self.tray.stop()
+        try:
+            self.tray.stop()
+        except Exception:
+            pass
         self.root.after(0, self.root.destroy)
+
+    # -- Run -------------------------------------------------------------------
 
     def run(self):
         self.root.protocol("WM_DELETE_WINDOW", lambda: self.root.withdraw())
