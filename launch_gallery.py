@@ -174,6 +174,14 @@ APPS = [
         "category": "Session Management",
     },
     {
+        "script": "aitimer.py",
+        "name": "AI Timer",
+        "icon": "AT", "color": "#f9e2af", "level": 2,
+        "problem": "You open 4 LLM chats, scatter between them, lose track of time and which ones are done.",
+        "solution": "Multiple concurrent timers. Auto-detects AI windows. Periodic check-in popups. Jump-back button to return to any tracked window. Exports time log.",
+        "category": "Productivity",
+    },
+    {
         "script": "steps.py",
         "name": "Steps Recorder",
         "icon": "ST", "color": "#f5c2e7", "level": 3,
