@@ -62,6 +62,32 @@ SELECT_BG   = "#d4e8fc"
 SHADOW      = "#00000018"
 STATUS_BG   = "#fbfbfd"
 
+# ── Self-cleanup: kill any old DevSpy instances ──────────────────────────────
+def kill_old_instances():
+    """Kill any other running devspy.py processes before starting."""
+    my_pid = os.getpid()
+    killed = 0
+    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+        try:
+            if proc.info["pid"] == my_pid:
+                continue
+            name = (proc.info["name"] or "").lower()
+            if "python" not in name:
+                continue
+            cmdline = proc.info.get("cmdline") or []
+            if any("devspy.py" in str(c).lower() for c in cmdline):
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except psutil.TimeoutExpired:
+                    proc.kill()
+                killed += 1
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    if killed:
+        print(f"[DevSpy] Killed {killed} old instance(s)")
+    return killed
+
 # ── Config ───────────────────────────────────────────────────────────────────
 def load_config():
     if CONFIG_PATH.exists():
@@ -118,33 +144,33 @@ def get_exe_for_pid(pid):
         except: return ""
 
 # ── Icon extraction & cache ──────────────────────────────────────────────────
-_icon_cache = {}
+# Two caches: raw bytes (thread-safe) and QPixmap (main thread only)
+_icon_bytes_cache = {}   # exe_path_lower -> bytes (or None for default)
+_icon_pixmap_cache = {}  # exe_path_lower -> QPixmap
+_icon_cache_lock = threading.Lock()
 _default_pixmap = None
+ICON_SIZE = 22
 
 def get_default_icon():
     global _default_pixmap
     if _default_pixmap is None:
-        pm = QPixmap(20, 20)
-        pm.fill(QColor(ACCENT))
+        pm = QPixmap(ICON_SIZE, ICON_SIZE)
+        pm.fill(Qt.transparent)
         p = QPainter(pm)
         p.setRenderHint(QPainter.Antialiasing)
-        p.setPen(QPen(QColor("#ffffff"), 1.5))
-        p.drawRoundedRect(2, 2, 16, 16, 4, 4)
+        p.setBrush(QBrush(QColor(ACCENT)))
+        p.setPen(QPen(QColor("#ffffff"), 1.2))
+        p.drawRoundedRect(2, 2, ICON_SIZE - 4, ICON_SIZE - 4, 4, 4)
         p.end()
         _default_pixmap = pm
     return _default_pixmap
 
-def extract_icon(exe_path):
-    if not exe_path:
-        return get_default_icon()
-    key = exe_path.lower()
-    if key in _icon_cache:
-        return _icon_cache[key]
+def _extract_icon_bytes(exe_path):
+    """THREAD-SAFE: extract icon as raw RGBA bytes. Returns None if failed."""
     try:
         large, small = win32gui.ExtractIconEx(exe_path, 0)
         if not large:
-            _icon_cache[key] = get_default_icon()
-            return _icon_cache[key]
+            return None
         hdc = win32ui.CreateDCFromHandle(win32gui.GetDC(0))
         hbmp = win32ui.CreateBitmap()
         hbmp.CreateCompatibleBitmap(hdc, 32, 32)
@@ -156,15 +182,41 @@ def extract_icon(exe_path):
         for h in large: win32gui.DestroyIcon(h)
         for h in small: win32gui.DestroyIcon(h)
         hdc2.DeleteDC()
-        # PIL → QPixmap
-        data = img.tobytes("raw", "RGBA")
-        qimg = QImage(data, 32, 32, QImage.Format_RGBA8888)
-        pm = QPixmap.fromImage(qimg).scaled(20, 20, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        _icon_cache[key] = pm
+        return img.tobytes("raw", "RGBA")
+    except Exception:
+        return None
+
+def preload_icons(paths):
+    """Called from worker thread — extracts raw bytes for unknown paths."""
+    with _icon_cache_lock:
+        todo = [p for p in paths if p and p.lower() not in _icon_bytes_cache]
+    for path in todo:
+        key = path.lower()
+        b = _extract_icon_bytes(path)
+        with _icon_cache_lock:
+            _icon_bytes_cache[key] = b
+
+def get_icon_pixmap(exe_path):
+    """MAIN THREAD ONLY: returns cached QPixmap, building from bytes if needed."""
+    if not exe_path:
+        return get_default_icon()
+    key = exe_path.lower()
+    if key in _icon_pixmap_cache:
+        return _icon_pixmap_cache[key]
+    with _icon_cache_lock:
+        raw = _icon_bytes_cache.get(key)
+    if raw is None:
+        # Not preloaded yet or extraction failed — use default for now
+        # (worker will extract it on next cycle)
+        return get_default_icon()
+    try:
+        qimg = QImage(raw, 32, 32, QImage.Format_RGBA8888)
+        pm = QPixmap.fromImage(qimg).scaled(
+            ICON_SIZE, ICON_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        _icon_pixmap_cache[key] = pm
         return pm
-    except:
-        _icon_cache[key] = get_default_icon()
-        return _icon_cache[key]
+    except Exception:
+        return get_default_icon()
 
 # ── GPU info (PowerShell) ────────────────────────────────────────────────────
 def get_gpu_info():
@@ -182,19 +234,27 @@ def get_gpu_info():
 # ═════════════════════════════════════════════════════════════════════════════
 class ProcWorker(QThread):
     updated = pyqtSignal(list)
+    icons_ready = pyqtSignal()
     def run(self):
         while True:
             procs = []
+            paths = set()
             for p in psutil.process_iter(["pid","name","cpu_percent","memory_info","status","exe"]):
                 try:
                     i = p.info
                     mem = (i["memory_info"].rss / (1024*1024)) if i.get("memory_info") else 0
+                    path = i.get("exe") or ""
                     procs.append({"pid":i["pid"], "name":i["name"] or "—",
                                   "cpu":i.get("cpu_percent",0) or 0,
                                   "mem":round(mem,1), "status":i.get("status","?"),
-                                  "path":i.get("exe") or ""})
+                                  "path":path})
+                    if path:
+                        paths.add(path)
                 except: pass
             self.updated.emit(procs)
+            # Preload icons for this batch (on bg thread, Win32 calls only)
+            preload_icons(list(paths))
+            self.icons_ready.emit()
             time.sleep(2.5)
 
 class SysWorker(QThread):
@@ -519,7 +579,8 @@ class DevSpyWindow(QMainWindow):
         # Tree
         self._proc_tree = QTreeWidget()
         self._proc_tree.setHeaderLabels(["", "Name", "PID", "CPU", "Memory", "Status"])
-        self._proc_tree.setColumnWidth(0, 28)  # icon
+        self._proc_tree.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self._proc_tree.setColumnWidth(0, 34)  # icon
         self._proc_tree.setColumnWidth(1, 200)
         self._proc_tree.setColumnWidth(2, 65)
         self._proc_tree.setColumnWidth(3, 65)
@@ -822,6 +883,7 @@ class DevSpyWindow(QMainWindow):
     def _init_workers(self):
         self._proc_worker = ProcWorker()
         self._proc_worker.updated.connect(self._on_procs)
+        self._proc_worker.icons_ready.connect(self._render_procs)
         self._proc_worker.start()
 
         self._sys_worker = SysWorker()
@@ -862,7 +924,7 @@ class DevSpyWindow(QMainWindow):
         reselect = None
         for p in data:
             item = QTreeWidgetItem()
-            icon_pm = extract_icon(p.get("path"))
+            icon_pm = get_icon_pixmap(p.get("path"))
             item.setIcon(0, QIcon(icon_pm))
             item.setText(1, p["name"])
             item.setText(2, str(p["pid"]))
@@ -1214,9 +1276,11 @@ class DevSpyWindow(QMainWindow):
 
 # ═════════════════════════════════════════════════════════════════════════════
 def main():
+    kill_old_instances()
     app = QApplication(sys.argv)
     app.setFont(QFont("Segoe UI", 10))
     app.setStyle("Fusion")
+    app.setQuitOnLastWindowClosed(False)  # Keep running when hidden to tray
     win = DevSpyWindow()
     win.show()
     sys.exit(app.exec_())

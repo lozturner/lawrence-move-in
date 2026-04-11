@@ -1,0 +1,85 @@
+---
+title: DevSpy — Behaviour Flow
+---
+flowchart TD
+    START([DevSpy Launch]) --> INIT[Load Config JSON]
+    INIT --> UI[Build Tkinter UI<br/>4 Tabs + Status Bar]
+    INIT --> TRAY[Start System Tray<br/>pystray icon]
+    INIT --> HOTKEY[Start Hotkey Listener<br/>Ctrl+Shift+D polling]
+
+    UI --> THREADS{Start Background Threads}
+
+    THREADS --> T_PROC[Process Collector<br/>psutil every 2s]
+    THREADS --> T_SYS[System Monitor<br/>psutil every 1s]
+    THREADS --> T_SPY[Window Spy<br/>Win32 API every 100ms]
+
+    %% Process Tab Flow
+    T_PROC --> COLLECT[Enumerate Processes<br/>PID, name, CPU, mem, path]
+    COLLECT --> FILTER{Filter text<br/>entered?}
+    FILTER -->|Yes| FILT_APPLY[Apply name/PID/path filter]
+    FILTER -->|No| SORT
+    FILT_APPLY --> SORT[Sort by selected column]
+    SORT --> RENDER[Render in Treeview]
+    RENDER --> WAIT_PROC[Sleep 2s] --> COLLECT
+
+    %% Process Actions
+    RENDER --> SEL{Process<br/>selected?}
+    SEL -->|Yes| ACTIONS{User Action}
+    ACTIONS --> COPY_PID[Copy PID to clipboard]
+    ACTIONS --> COPY_PATH[Copy Path to clipboard]
+    ACTIONS --> COPY_CMD[Copy CmdLine to clipboard]
+    ACTIONS --> COPY_JSON[Copy as JSON to clipboard]
+    ACTIONS --> OPEN_LOC[Open File Location<br/>explorer /select]
+    ACTIONS --> KILL[Terminate Process<br/>psutil.terminate]
+
+    %% Window Spy Flow
+    T_SPY --> SPY_CHECK{Spy Active<br/>AND not Pinned?}
+    SPY_CHECK -->|Yes| CURSOR[Get Cursor Position<br/>ctypes GetCursorPos]
+    SPY_CHECK -->|No| WAIT_SPY[Sleep 100ms] --> SPY_CHECK
+    CURSOR --> HWND[WindowFromPoint<br/>ctypes]
+    HWND --> SPY_DATA[Read Window Data<br/>Title, Class, HWND, PID<br/>Rect, Styles, Topmost]
+    SPY_DATA --> SPY_RENDER[Update Spy Fields]
+    SPY_RENDER --> WAIT_SPY
+
+    %% IDs & Handles Flow
+    SEL -->|Refresh clicked| IDS_COLLECT[Collect IDs for PID]
+    IDS_COLLECT --> IDS_PROC[psutil: PPID, threads,<br/>connections, environ,<br/>memory, cwd]
+    IDS_PROC --> IDS_WIN[Win32: EnumWindows<br/>all HWNDs for PID]
+    IDS_WIN --> IDS_RENDER[Render in Text widget<br/>colour-coded sections]
+
+    %% System Tab Flow
+    T_SYS --> SYS_READ[Read CPU, RAM, Disk I/O,<br/>Network I/O via psutil]
+    SYS_READ --> SYS_CALC[Calculate deltas<br/>bytes/sec for I/O]
+    SYS_CALC --> SYS_RENDER[Update gauge labels]
+    SYS_RENDER --> WAIT_SYS[Sleep 1s] --> SYS_READ
+
+    %% Async one-shots
+    INIT --> PS_CPU[PowerShell: CPU Name<br/>Win32_Processor]
+    INIT --> PS_GPU[PowerShell: GPU Info<br/>Win32_VideoController]
+    PS_CPU --> SYS_RENDER
+    PS_GPU --> SYS_RENDER
+
+    %% Tray & Hotkey
+    TRAY --> TRAY_MENU{Tray Menu Click}
+    TRAY_MENU --> SHOW_HIDE[Toggle Window<br/>withdraw / deiconify]
+    TRAY_MENU --> TOPMOST[Toggle Always on Top<br/>save to config]
+    TRAY_MENU --> QUIT[Stop threads + tray<br/>destroy root]
+
+    HOTKEY --> HK_CHECK{Ctrl+Shift+D<br/>pressed?}
+    HK_CHECK -->|Yes| SHOW_HIDE
+    HK_CHECK -->|No| HK_WAIT[Sleep 50ms] --> HK_CHECK
+
+    %% Window close
+    UI --> CLOSE{Window X clicked}
+    CLOSE --> SHOW_HIDE
+
+    %% Styling
+    classDef thread fill:#89b4fa,stroke:#45475a,color:#0a0a14
+    classDef action fill:#a6e3a1,stroke:#45475a,color:#0a0a14
+    classDef decision fill:#fab387,stroke:#45475a,color:#0a0a14
+    classDef tray fill:#cba6f7,stroke:#45475a,color:#0a0a14
+
+    class T_PROC,T_SYS,T_SPY,HOTKEY thread
+    class COPY_PID,COPY_PATH,COPY_CMD,COPY_JSON,OPEN_LOC,KILL action
+    class FILTER,SEL,SPY_CHECK,HK_CHECK,TRAY_MENU,CLOSE decision
+    class TRAY,SHOW_HIDE,TOPMOST,QUIT tray

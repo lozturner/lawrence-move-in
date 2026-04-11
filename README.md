@@ -1,8 +1,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" />
-  <img src="https://img.shields.io/badge/Applets-16-b4befe?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/Lines-14%2C000+-a6e3a1?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Applets-20-b4befe?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Lines-17%2C000+-a6e3a1?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Built%20With-Claude%20AI-cba6f7?style=for-the-badge" />
 </p>
 
@@ -14,7 +14,7 @@
 </h1>
 
 <p align="center">
-  <strong>16 Python applets</strong> that fix what Windows gets wrong.<br>
+  <strong>20 Python applets</strong> that fix what Windows gets wrong.<br>
   Window management. Voice input. AI assistance. Session recording. Brain dumps.<br>
   Built by one developer with ADHD who got tired of fighting the OS.
 </p>
@@ -44,6 +44,7 @@ It's 2026. AI sees everything. Yet Windows still can't:
 | [docs](docs/apps/focus-rules.md) | **Focus Rules** | [`niggly.py`](niggly.py) | Focus one window, lose three others. IF/THEN rules: *"When I focus VS Code, minimise Slack."* |
 | [docs](docs/apps/window-tiles.md) | **Window Tiles** | [`tiles.py`](tiles.py) | No visual map of what's open. Every window as a coloured tile. Ghost mode at 10% opacity. |
 | [docs](docs/apps/hot-corners.md) | **Hot Corners** | [`hot_corner.py`](hot_corner.py) | No quick triggers. Cursor hits a screen corner, action fires. Run any file from any corner. |
+| | **App Tray** | [`app_tray.py`](app_tray.py) | Your most-used apps have no permanent tray icons. Real icons extracted from .exe files. |
 
 ### AI & Voice
 
@@ -63,6 +64,8 @@ It's 2026. AI sees everything. Yet Windows still can't:
 | [docs](docs/apps/capture.md) | **Capture** | [`capture.py`](capture.py) | Morning brain dump. Tray click, screenshot, chatbot popup, AI processes both, unique code, clipboard ready. |
 | [docs](docs/apps/annoyances.md) | **Annoyances** | [`annoyances.py`](annoyances.py) | Computer annoyances pile up unfixed. Persistent log with AI workarounds. Exports to markdown. |
 | [docs](docs/apps/launcher.md) | **Master Launcher** | [`launcher.py`](launcher.py) | No motivation to use your own tools. Gamification command centre. XP system. Glowing orbs. |
+| | **Nag** | [`nag.py`](nag.py) | You forget what you should be doing. Timetable nagger linked to Google Calendar. |
+| | **AI Timer** | [`aitimer.py`](aitimer.py) | 4 LLM chats open, lose track of time. Multiple concurrent timers. Check-in popups. Jump back. |
 
 ### Session Management
 
@@ -71,6 +74,7 @@ It's 2026. AI sees everything. Yet Windows still can't:
 | [docs](docs/apps/mouse-pause.md) | **Mouse Pause** | [`mouse_pause.py`](mouse_pause.py) | You sit back with nothing to do. Idle detection, action panel, AI input, custom buttons. Click to lock. |
 | [docs](docs/apps/replay.md) | **Replay** | [`replay.py`](replay.py) | You can't remember what you did an hour ago. Records everything. Scrub timeline. Mouse trail. Export report. |
 | [docs](docs/apps/winddown.md) | **Winddown** | [`winddown.py`](winddown.py) | You don't know how to finish. State capture, AI verification checklist, session save, auto-resume next launch. |
+| | **Steps Recorder** | [`steps.py`](steps.py) | Windows Steps Recorder is dead. Records every click, keystroke, window with screenshots and handles. |
 
 ### Infrastructure
 
@@ -80,6 +84,8 @@ It's 2026. AI sees everything. Yet Windows still can't:
 | | **Self-Clean** | [`selfclean.py`](selfclean.py) | Auto-kills duplicate processes on startup. Imported by every applet. |
 | | **Kill All** | [`kill_all.py`](kill_all.py) | Emergency stop. Kills every running applet. |
 | | **Launch All** | [`launch_all.pyw`](launch_all.pyw) | Starts the entire suite silently. |
+| | **Gallery** | [`launch_gallery.py`](launch_gallery.py) | Level 4 visual gallery. Click-to-launch cards with thumbnails. Add external apps. |
+| | **Level Launcher** | [`launch_level.py`](launch_level.py) | Tiered launcher: L1 essentials, L2 productivity, L3 full suite, L4 gallery. |
 | | **Make Shortcuts** | [`make_shortcuts.py`](make_shortcuts.py) | Generates Windows desktop `.lnk` files for every app. |
 
 ---
@@ -156,9 +162,11 @@ hub.py
 | File | What it is |
 |---|---|
 | [`docs/apps/`](docs/apps/) | Individual documentation for every applet |
+| [`docs/diagrams.md`](docs/diagrams.md) | **8 architecture diagrams** — ERD, UML, sequence, flowchart, class, state, deployment, conversation flow |
 | [`behavior.md`](behavior.md) | Mermaid flowcharts: IF/THEN/THAT for every applet |
 | [`storyboard.html`](storyboard.html) | Single-page animated pitch: problem and solution for each app |
 | [`index_presentation.html`](index_presentation.html) | Full animated presentation with Three.js particle background |
+| [`docs/SKILL_session_audit.md`](docs/SKILL_session_audit.md) | Reusable session audit prompt — paste into any new chat |
 
 ---
 
@@ -212,7 +220,7 @@ pythonw hub.py
 <p align="center">
   <strong>Built by Loz Turner.</strong><br>
   Powered by Claude AI. Driven by ADHD.<br>
-  One person's frustration. Sixteen solutions.<br>
+  One person's frustration. Twenty solutions.<br>
   <br>
   <sub>No committee. No spec. Just fix it.</sub>
 </p>
