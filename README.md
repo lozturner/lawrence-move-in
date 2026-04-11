@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" />
-  <img src="https://img.shields.io/badge/Applets-20-b4befe?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Applets-21-b4befe?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Lines-17%2C000+-a6e3a1?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Built%20With-Claude%20AI-cba6f7?style=for-the-badge" />
 </p>
@@ -14,7 +14,7 @@
 </h1>
 
 <p align="center">
-  <strong>20 Python applets</strong> that fix what Windows gets wrong.<br>
+  <strong>21 tools</strong> (20 Python + 1 Rust) that fix what Windows gets wrong.<br>
   Window management. Voice input. AI assistance. Session recording. Brain dumps.<br>
   Built by one developer with ADHD who got tired of fighting the OS.
 </p>
@@ -55,6 +55,7 @@ It's 2026. AI sees everything. Yet Windows still can't:
 | [docs](docs/apps/kidlin.md) | **Kidlin's Law** | [`kidlin.py`](kidlin.py) | You can't articulate the problem. Type messy thinking, AI returns a clean problem statement. |
 | [docs](docs/apps/voice-sort.md) | **Voice Sort** | [`voicesort.py`](voicesort.py) | Thoughts vanish the moment you think them. AI categorises every clipboard/voice note into markdown files. |
 | [docs](docs/apps/scribe.md) | **Scribe** | [`scribe.py`](scribe.py) | You talk faster than you type. Floating offline speech-to-text via Vosk. Auto-tags content. |
+| | **TriClick** | [`laurence_triclick.exe`](laurence_triclick.exe) | Triple right-click anywhere. Voice commands via Whisper. Train phrases → actions. Browser tab switcher. Rust binary, 307KB. |
 
 ### Productivity
 

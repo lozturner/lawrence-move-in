@@ -108,6 +108,10 @@ APPS = [
      "problem": "Windows Steps Recorder is dead. You need to document what you clicked and why.",
      "solution": "Records every click, keystroke, window switch with screenshots, handles, PIDs, clipboard. Navigable step-by-step viewer. Exports to JSON and markdown.",
      "category": "Session Management"},
+    {"script": "laurence_triclick.exe", "name": "TriClick", "icon": "TC", "color": "#fab387", "level": 2,
+     "problem": "You say what you want the computer to do. It doesn't happen. No way to train it.",
+     "solution": "Triple right-click anywhere. Voice command via Whisper. Train button maps phrases to actions. Builds a personal command dataset. Browser tab switcher in tray.",
+     "category": "AI & Voice"},
 ]
 
 CATEGORIES = ["Window Management", "Productivity", "AI & Voice", "Session Management", "External Tools"]
@@ -517,7 +521,14 @@ class GalleryLauncher:
                 if not path_str: return
                 _launch_path(path_str)
             else:
-                selfclean.safe_launch(app["script"])
+                script = app["script"]
+                if script.endswith(".exe"):
+                    # Native binary — launch directly
+                    path = SCRIPT_DIR / script
+                    if path.exists():
+                        subprocess.Popen([str(path)], creationflags=DETACHED, cwd=str(SCRIPT_DIR))
+                else:
+                    selfclean.safe_launch(script)
             if not quiet:
                 self.status_label.config(text=f"Launched {app['name']}")
         except Exception as e:

@@ -39,6 +39,7 @@ SHORTCUTS = [
     ("Lawrence — Level 4 Gallery", "launch_gallery.py", "Visual gallery — pick apps with thumbnails"),
     ("Lawrence — Steps",        "steps.py",        "Steps recorder — clicks, keys, windows, screenshots"),
     ("Lawrence — AI Timer",     "aitimer.py",      "Track time in LLM chats with check-ins"),
+    ("Lawrence — TriClick",     "laurence_triclick.exe", "Triple right-click voice commands + Train"),
 ]
 
 shell = win32com.client.Dispatch("WScript.Shell")
@@ -52,13 +53,20 @@ for lnk_name, script, desc in SHORTCUTS:
 
     lnk_path = str(DESKTOP / f"{lnk_name}.lnk")
     sc = shell.CreateShortCut(lnk_path)
-    sc.TargetPath       = str(PYTHONW)
-    sc.Arguments        = f'"{script_path}"'
+    # Handle .exe files directly, .py files via pythonw
+    if script.endswith(".exe"):
+        sc.TargetPath       = str(script_path)
+        sc.Arguments        = ""
+    else:
+        sc.TargetPath       = str(PYTHONW)
+        sc.Arguments        = f'"{script_path}"'
     sc.WorkingDirectory = str(SUITE_DIR)
     sc.Description      = f"Lawrence: Move In — {desc}"
     sc.WindowStyle      = 7
 
-    if MOVEIN_EXE.exists():
+    if script.endswith(".exe"):
+        sc.IconLocation = f"{script_path},0"
+    elif MOVEIN_EXE.exists():
         sc.IconLocation = f"{MOVEIN_EXE},0"
     else:
         sc.IconLocation = f"{PYTHONW},0"
