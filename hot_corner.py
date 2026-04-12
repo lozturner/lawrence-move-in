@@ -190,6 +190,26 @@ def action_windowbot(**_kw):
                     win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
                 win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
                 win32gui.SetForegroundWindow(hwnd)
+                # Find the text input (Edit control) inside and focus it
+                time.sleep(0.1)
+                def _find_edit(h, edits):
+                    cls = win32gui.GetClassName(h)
+                    if cls == "Edit":
+                        edits.append(h)
+                    return True
+                edits = []
+                try:
+                    win32gui.EnumChildWindows(hwnd, _find_edit, edits)
+                except:
+                    pass
+                if edits:
+                    # Attach to the window's thread so SetFocus works cross-process
+                    import win32process, win32api
+                    fg_thread = user32.GetWindowThreadProcessId(hwnd, None)
+                    my_thread = user32.GetCurrentThreadId()
+                    user32.AttachThreadInput(my_thread, fg_thread, True)
+                    user32.SetFocus(edits[0])
+                    user32.AttachThreadInput(my_thread, fg_thread, False)
             except:
                 pass
             return
