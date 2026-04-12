@@ -1,0 +1,17 @@
+{
+  "skills": [
+    {
+      "phrase": "Open the start bar",
+      "action_id": "start_menu",
+      "learned_at": "2026-04-12T11:29:42",
+      "uses": 0
+    },
+    {
+      "phrase": "Open that spinning plate tab",
+      "action_id": "focus_window",
+      "learned_at": "2026-04-12T13:49:57",
+      "uses": 0
+    }
+  ],
+  "version": "1.0"
+}

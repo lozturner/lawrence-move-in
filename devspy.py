@@ -504,6 +504,22 @@ class DevSpyWindow(QMainWindow):
             self._sidebar_btns.append((name, btn))
 
         sb_layout.addStretch()
+
+        # Game launch button
+        game_btn = QPushButton("\U0001F3AE   WinSim Game")
+        game_btn.setFixedHeight(40)
+        game_btn.setCursor(Qt.PointingHandCursor)
+        game_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {ACCENT}; color: white; border: none;
+                border-radius: 8px; font: 12px 'Segoe UI'; text-align: left;
+                padding-left: 14px;
+            }}
+            QPushButton:hover {{ background: {ACCENT_HOVER}; }}
+        """)
+        game_btn.clicked.connect(self._launch_game)
+        sb_layout.addWidget(game_btn)
+
         ver = QLabel(f"v{__version__}")
         ver.setStyleSheet(f"color: {TEXT3}; font: 10px 'Segoe UI'; border: none;")
         sb_layout.addWidget(ver)
@@ -1242,6 +1258,12 @@ class DevSpyWindow(QMainWindow):
     def _quit(self):
         self._tray.hide()
         QApplication.quit()
+
+    def _launch_game(self):
+        game_path = SCRIPT_DIR / "winsim" / "winsim_main.py"
+        if game_path.exists():
+            subprocess.Popen([sys.executable, "-m", "winsim.winsim_main"],
+                              cwd=str(SCRIPT_DIR), creationflags=0x8)
 
     def closeEvent(self, event):
         event.ignore()
