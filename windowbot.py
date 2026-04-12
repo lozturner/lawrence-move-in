@@ -7,6 +7,7 @@ __version__ = "2.0.0"
 import selfclean; selfclean.ensure_single("windowbot.py")
 
 import json, os, re, subprocess, threading, time, tkinter as tk
+from tkinter import ttk
 from pathlib import Path
 import win32gui, win32con, win32process
 import psutil, pystray
