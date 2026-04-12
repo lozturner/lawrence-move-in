@@ -19,8 +19,8 @@
       "telegram_chat_id": "916637857"
     },
     "bottom-right": {
-      "enabled": false,
-      "action": "task_view"
+      "enabled": true,
+      "action": "windowbot"
     }
   }
 }

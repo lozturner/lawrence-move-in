@@ -43,8 +43,8 @@ DEFAULT_CONFIG = {
             "telegram_chat_id": "916637857",
         },
         "bottom-right": {
-            "enabled": False,
-            "action": "task_view",
+            "enabled": True,
+            "action": "windowbot",
         },
     },
 }
@@ -162,6 +162,45 @@ def action_hub(**_kw):
     subprocess.Popen([pythonw, script], creationflags=0x00000008)
 
 
+def action_windowbot(**_kw):
+    """Focus WindowBot if running, otherwise launch it. Failsafe loop."""
+    import win32gui, win32con
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    script = os.path.join(script_dir, "windowbot.py")
+    pythonw = sys.executable.replace("python.exe", "pythonw.exe")
+
+    # Try to find and focus existing WindowBot window
+    for attempt in range(2):
+        found = []
+        def _cb(h, _):
+            if win32gui.IsWindowVisible(h):
+                t = win32gui.GetWindowText(h)
+                if "windowbot" in t.lower():
+                    found.append(h)
+            return True
+        try:
+            win32gui.EnumWindows(_cb, None)
+        except:
+            pass
+
+        if found:
+            hwnd = found[0]
+            try:
+                if win32gui.IsIconic(hwnd):
+                    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+                win32gui.SetForegroundWindow(hwnd)
+            except:
+                pass
+            return
+
+        # Not found — launch it (first attempt only)
+        if attempt == 0 and os.path.exists(script):
+            subprocess.Popen([pythonw, script], creationflags=0x00000008,
+                             cwd=script_dir)
+            time.sleep(2)  # wait for it to create a window
+
+
 def action_run_file(file_path="", **_kw):
     """Run any file — .exe, .py, .bat, .ps1, .rs, .c, .js, whatever."""
     if not file_path or not os.path.exists(file_path):
@@ -194,6 +233,7 @@ ACTIONS = {
     "mouse_pause": action_mouse_pause,
     "nacho": action_nacho,
     "hub": action_hub,
+    "windowbot": action_windowbot,
     "run_file": action_run_file,
 }
 
@@ -204,6 +244,7 @@ ACTION_LABELS = {
     "mouse_pause": "Mouse Pause Panel",
     "nacho": "NACHO Voice AI",
     "hub": "Hub Launcher",
+    "windowbot": "WindowBot",
     "run_file": "Run File",
 }
 
