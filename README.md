@@ -1,8 +1,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" />
-  <img src="https://img.shields.io/badge/Applets-21-b4befe?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/Lines-17%2C000+-a6e3a1?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Applets-24-b4befe?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Lines-19%2C000+-a6e3a1?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Built%20With-Claude%20AI-cba6f7?style=for-the-badge" />
 </p>
 
@@ -14,7 +14,7 @@
 </h1>
 
 <p align="center">
-  <strong>21 tools</strong> (20 Python + 1 Rust) that fix what Windows gets wrong.<br>
+  <strong>24 tools</strong> (23 Python + 1 Rust) that fix what Windows gets wrong.<br>
   Window management. Voice input. AI assistance. Session recording. Brain dumps.<br>
   Built by one developer with ADHD who got tired of fighting the OS.
 </p>
@@ -55,7 +55,9 @@ It's 2026. AI sees everything. Yet Windows still can't:
 | [docs](docs/apps/kidlin.md) | **Kidlin's Law** | [`kidlin.py`](kidlin.py) | You can't articulate the problem. Type messy thinking, AI returns a clean problem statement. |
 | [docs](docs/apps/voice-sort.md) | **Voice Sort** | [`voicesort.py`](voicesort.py) | Thoughts vanish the moment you think them. AI categorises every clipboard/voice note into markdown files. |
 | [docs](docs/apps/scribe.md) | **Scribe** | [`scribe.py`](scribe.py) | You talk faster than you type. Floating offline speech-to-text via Vosk. Auto-tags content. |
-| | **TriClick** | [`laurence_triclick.exe`](laurence_triclick.exe) | Triple right-click anywhere. Voice commands via Whisper. Train phrases → actions. Browser tab switcher. Rust binary, 307KB. |
+| | **TriClick** | [`laurence_triclick.exe`](laurence_triclick.exe) | Triple right-click anywhere. Voice commands via Whisper. Train phrases → actions. Multi-whisper: each voice command spawns its own popup, spread left-to-right. Rust binary. |
+| | **WindowBot** | [`windowbot.py`](windowbot.py) | Natural language window management. Claude API interprets any phrase → win32 action. Auto-learns skills into a JSON bin. 19 actions. Bot Prompt dev panel alongside. |
+| | **Branch** | [`windowbranch.py`](windowbranch.py) | Full-screen radial overlay of every open window + browser tab. Human-heartbeat oscillator cycles through them. Click to jump. Zones mode shows screen-position map. Ctrl+Alt+B. |
 
 ### Productivity
 
@@ -63,6 +65,7 @@ It's 2026. AI sees everything. Yet Windows still can't:
 |---|---|---|---|
 | [docs](docs/apps/linker.md) | **Linker** | [`linker.py`](linker.py) | Can't find connector phrases. Tile board with multi-select, zoom, AI suggest, import/export for free LLMs. |
 | [docs](docs/apps/capture.md) | **Capture** | [`capture.py`](capture.py) | Morning brain dump. Tray click, screenshot, chatbot popup, AI processes both, unique code, clipboard ready. |
+| | **ScreenRouter** | [`screenrouter.py`](screenrouter.py) | Watches ShareX folder. New screenshot → popup asks "What do you want to say about this?" Thumbnail + fullscreen viewer. Routes to email (default), Desktop, or Lawrence Suite apps. Structured JSON inbox for bots. |
 | [docs](docs/apps/annoyances.md) | **Annoyances** | [`annoyances.py`](annoyances.py) | Computer annoyances pile up unfixed. Persistent log with AI workarounds. Exports to markdown. |
 | [docs](docs/apps/launcher.md) | **Master Launcher** | [`launcher.py`](launcher.py) | No motivation to use your own tools. Gamification command centre. XP system. Glowing orbs. |
 | | **Nag** | [`nag.py`](nag.py) | You forget what you should be doing. Timetable nagger linked to Google Calendar. |
@@ -221,7 +224,7 @@ pythonw hub.py
 <p align="center">
   <strong>Built by Loz Turner.</strong><br>
   Powered by Claude AI. Driven by ADHD.<br>
-  One person's frustration. Twenty solutions.<br>
+  One person's frustration. Twenty-four solutions.<br>
   <br>
   <sub>No committee. No spec. Just fix it.</sub>
 </p>

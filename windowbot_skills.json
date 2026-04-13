@@ -11,6 +11,48 @@
       "action_id": "focus_window",
       "learned_at": "2026-04-12T13:49:57",
       "uses": 0
+    },
+    {
+      "phrase": "I still can't just move through. I want to be able to come in after sitting down and say, \"Hey can I move through my window?\"",
+      "action_id": "alt_tab",
+      "learned_at": "2026-04-12T17:28:17",
+      "uses": 0
+    },
+    {
+      "phrase": "Hey Claude, can you move through and remind me what I was doing by cycling through and bringing up some things, or maybe do them in the reverse order that I opened them up?",
+      "action_id": "alt_tab",
+      "learned_at": "2026-04-12T17:28:32",
+      "uses": 0
+    },
+    {
+      "phrase": "There's a thing that keeps popping up in the background. I need you to find it and get rid of it or pause it",
+      "action_id": "list_windows",
+      "learned_at": "2026-04-12T17:29:22",
+      "uses": 0
+    },
+    {
+      "phrase": "So open up the bank in for me",
+      "action_id": "open_app",
+      "learned_at": "2026-04-12T19:54:45",
+      "uses": 0
+    },
+    {
+      "phrase": "The point was this: when I say Claude here with I won't be long Take a note Maurice",
+      "action_id": "focus_window",
+      "learned_at": "2026-04-13T11:14:56",
+      "uses": 0
+    },
+    {
+      "phrase": "Open my Gmail",
+      "action_id": "open_app",
+      "learned_at": "2026-04-13T11:14:59",
+      "uses": 0
+    },
+    {
+      "phrase": "Cycle windows through for me, including tabs within browsers",
+      "action_id": "alt_tab",
+      "learned_at": "2026-04-13T14:33:30",
+      "uses": 0
     }
   ],
   "version": "1.0"
