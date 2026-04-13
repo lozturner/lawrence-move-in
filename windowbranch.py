@@ -1,12 +1,15 @@
 """
-Lawrence: Move In — Branch v1.0.0
+Lawrence: Move In — Branch v1.3.0
 Full-screen branch overlay: scans all open windows + browser tabs.
 Draws a 2D pannable/zoomable radial tree with a human-heartbeat
 oscillator cycling through nodes. Click any node → jump there.
 Zones overlay: shows windows mapped to actual screen positions.
+Playground: full-screen bookmark board with coloured zones, shaped
+  nodes, favicon loading, pan/zoom, edit mode drag & reshape.
+  Laurence preset pre-loaded with 10 zones and 40 bookmarks.
 Hotkey: Ctrl+Alt+B  |  Tray icon  |  Auto-shows on idle (optional)
 """
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 import selfclean; selfclean.ensure_single("windowbranch.py")
 
 import ctypes, json, math, os, random, sys, threading, time
@@ -821,6 +824,575 @@ class BranchOverlay:
         except: pass
         self._on_close()
 
+# ── Playground ────────────────────────────────────────────────────────────────
+import urllib.request as _ureq
+import io           as _io
+import uuid         as _uuid_mod
+import webbrowser   as _wb
+import copy         as _copy
+
+PLAYGROUND_FILE = SCRIPT_DIR / "windowbranch_playground.json"
+FAVICON_DIR     = SCRIPT_DIR / ".playground_favicons"
+SHAPES          = ["rounded", "circle", "square", "hexagon", "cabin", "pill", "diamond"]
+
+ZONE_COLORS = {
+    "money":    "#ffd43b", "wishlist": "#d2a8ff", "news":    "#79c0ff",
+    "todo":     "#ffa657", "socials":  "#ff7b72", "food":    "#e3b341",
+    "subs":     "#76e3ea", "daily":    "#7ee787", "hustle":  "#94e2d5",
+    "personal": "#89b4fa",
+}
+
+def _blend(hex_col: str, alpha: float, base: str = BG) -> str:
+    def p(h):
+        h = h.lstrip("#")
+        return int(h[:2],16), int(h[2:4],16), int(h[4:6],16)
+    r1,g1,b1 = p(hex_col); r2,g2,b2 = p(base)
+    return "#{:02x}{:02x}{:02x}".format(
+        int(r1*alpha+r2*(1-alpha)), int(g1*alpha+g2*(1-alpha)), int(b1*alpha+b2*(1-alpha)))
+
+def _mk_node(title, url, zone, shape="rounded"):
+    return {"id": str(_uuid_mod.uuid4())[:8], "title": title, "url": url,
+            "zone_id": zone, "shape": shape, "color": ZONE_COLORS.get(zone, BLUE),
+            "xf": 0.0, "yf": 0.0, "w": 110, "h": 32}
+
+def _mk_zone(zid, title, cx, cy, w, h, nodes=None):
+    return {"id": zid, "title": title, "color": ZONE_COLORS.get(zid, BLUE),
+            "cx": cx, "cy": cy, "w": w, "h": h, "nodes": nodes or []}
+
+LAURENCE_PRESET = {
+    "name": "Laurence's Every Day",
+    "zones": [
+        _mk_zone("money",    "💰 Money",          0.15, 0.23, 0.22, 0.30, [
+            _mk_node("Nationwide",       "https://www.nationwide.co.uk",                           "money"),
+            _mk_node("NatWest",          "https://www.natwest.com",                                "money"),
+            _mk_node("Salary Calc",      "https://www.thesalarycalculator.co.uk/",                 "money"),
+            _mk_node("PayPal",           "https://www.paypal.com/uk/home",                         "money"),
+        ]),
+        _mk_zone("daily",    "✅ Daily Check-in",  0.82, 0.25, 0.24, 0.36, [
+            _mk_node("Gmail",            "https://mail.google.com",                                "daily"),
+            _mk_node("Google Calendar",  "https://calendar.google.com",                            "daily"),
+            _mk_node("Universal Credit", "https://www.gov.uk/sign-in-universal-credit",            "daily"),
+            _mk_node("Heathcot Surgery", "https://systmonline.tpp-uk.com/",                        "daily"),
+            _mk_node("Fuel MPG",         "https://www.mpg-calculator.co.uk/",                      "daily"),
+            _mk_node("Child Maint.",     "https://www.gov.uk/child-maintenance-service/sign-in-account","daily"),
+        ]),
+        _mk_zone("news",     "📰 News",             0.46, 0.13, 0.20, 0.20, [
+            _mk_node("BBC News",         "https://www.bbc.co.uk/news",                             "news"),
+            _mk_node("YouTube",          "https://www.youtube.com",                                "news"),
+            _mk_node("Google",           "https://www.google.com",                                 "news"),
+            _mk_node("Sheets",           "https://sheets.google.com",                              "news"),
+        ]),
+        _mk_zone("hustle",   "💸 Side Hustle",      0.69, 0.14, 0.18, 0.20, [
+            _mk_node("FB Marketplace",   "https://www.facebook.com/marketplace",                   "hustle"),
+            _mk_node("Vinted",           "https://www.vinted.co.uk",                               "hustle"),
+            _mk_node("eBay",             "https://www.ebay.co.uk",                                 "hustle"),
+            _mk_node("Whatnot",          "https://www.whatnot.com",                                "hustle"),
+        ]),
+        _mk_zone("socials",  "📱 Socials",          0.48, 0.53, 0.16, 0.24, [
+            _mk_node("Facebook",         "https://www.facebook.com",                               "socials"),
+            _mk_node("YouTube",          "https://www.youtube.com",                                "socials"),
+            _mk_node("TikTok",           "https://www.tiktok.com",                                 "socials"),
+        ]),
+        _mk_zone("food",     "🍔 Food",              0.32, 0.74, 0.30, 0.22, [
+            _mk_node("Uber Eats",        "https://www.ubereats.com/gb",                            "food"),
+            _mk_node("Tesco",            "https://www.tesco.com",                                  "food"),
+            _mk_node("ASDA",             "https://www.asda.com",                                   "food"),
+            _mk_node("Sainsbury's",      "https://www.sainsburys.co.uk",                           "food"),
+            _mk_node("Morrisons",        "https://groceries.morrisons.com",                        "food"),
+            _mk_node("Waitrose",         "https://www.waitrose.com",                               "food"),
+            _mk_node("Ocado",            "https://www.ocado.com",                                  "food"),
+        ]),
+        _mk_zone("subs",     "🔄 Subscriptions",    0.80, 0.60, 0.22, 0.18, [
+            _mk_node("Releaf Cannabis",  "https://releaf.co.uk/",                                  "subs"),
+            _mk_node("Play Store Subs",  "https://play.google.com/store/account/subscriptions",    "subs"),
+        ]),
+        _mk_zone("wishlist", "🛒 Wishlist",          0.12, 0.70, 0.20, 0.26, [
+            _mk_node("Argos",            "https://www.argos.co.uk",                                "wishlist"),
+            _mk_node("eBay",             "https://www.ebay.co.uk",                                 "wishlist"),
+            _mk_node("Amazon UK",        "https://www.amazon.co.uk",                              "wishlist"),
+            _mk_node("ASOS",             "https://www.asos.com",                                   "wishlist"),
+        ]),
+        _mk_zone("todo",     "📋 Things To Do",      0.82, 0.82, 0.20, 0.14, [
+            _mk_node("Woking Council",   "https://www.woking.gov.uk/your-council/have-your-say/complaints/make-complaint","todo"),
+        ]),
+        _mk_zone("personal", "🏠 Personal",          0.62, 0.51, 0.22, 0.24, [
+            _mk_node("Stock Map",        "https://finviz.com/map.ashx",                            "personal"),
+            _mk_node("Weather Woking",   "https://www.google.com/search?q=weather+woking+GU21",    "personal"),
+            _mk_node("Telegram",         "https://web.telegram.org",                               "personal"),
+        ]),
+    ]
+}
+
+# ── Shape drawing ─────────────────────────────────────────────────────────────
+def _draw_shape(c: tk.Canvas, shape: str, x, y, w, h,
+                fill="", outline=BLUE, width=1, tags=()):
+    hw, hh = w/2, h/2
+    x1, y1, x2, y2 = x-hw, y-hh, x+hw, y+hh
+    ids = []
+    if shape == "circle":
+        r = min(hw, hh)
+        ids += [c.create_oval(x-r, y-r, x+r, y+r,
+                              fill=fill, outline=outline, width=width, tags=tags)]
+    elif shape == "square":
+        ids += [c.create_rectangle(x1, y1, x2, y2,
+                                   fill=fill, outline=outline, width=width, tags=tags)]
+    elif shape == "hexagon":
+        pts = []
+        for i in range(6):
+            a = math.pi/2 + i*math.pi/3
+            pts += [x + min(hw, hh)*math.cos(a), y - min(hw, hh)*math.sin(a)]
+        ids += [c.create_polygon(*pts, fill=fill, outline=outline, width=width, tags=tags)]
+    elif shape == "cabin":
+        ids += [c.create_polygon(
+            x, y1, x+hw, y1+hh*0.5, x+hw, y2, x-hw, y2, x-hw, y1+hh*0.5,
+            fill=fill, outline=outline, width=width, tags=tags)]
+    elif shape == "pill":
+        ids += [c.create_oval(x1, y1, x2, y2,
+                              fill=fill, outline=outline, width=width, tags=tags)]
+    elif shape == "diamond":
+        ids += [c.create_polygon(x, y1, x2, y, x, y2, x1, y,
+                                 fill=fill, outline=outline, width=width, tags=tags)]
+    else:  # "rounded"
+        r = min(10, hh*0.45)
+        pts = [x1+r,y1, x2-r,y1, x2,y1+r, x2,y2-r, x2-r,y2, x1+r,y2, x1,y2-r, x1,y1+r]
+        ids += [c.create_polygon(*pts, smooth=True,
+                                 fill=fill, outline=outline, width=width, tags=tags)]
+    return ids
+
+# ── Favicon loader ────────────────────────────────────────────────────────────
+class FaviconLoader:
+    _mem:     dict = {}
+    _pending: set  = set()
+    _lock          = threading.Lock()
+
+    @classmethod
+    def get(cls, url: str, on_done) -> None:
+        from urllib.parse import urlparse
+        try:    domain = urlparse(url).netloc.lower()
+        except: on_done(None); return
+        if not domain: on_done(None); return
+        with cls._lock:
+            if domain in cls._mem:   on_done(cls._mem[domain]); return
+            if domain in cls._pending: return
+            cls._pending.add(domain)
+        def _fetch():
+            img = None
+            try:
+                FAVICON_DIR.mkdir(exist_ok=True)
+                cp = FAVICON_DIR / f"{domain.replace('/','_').replace(':','_')}.png"
+                if cp.exists():
+                    img = PILImage.open(cp).convert("RGBA").resize((16,16), PILImage.LANCZOS)
+                else:
+                    req = _ureq.Request(
+                        f"https://www.google.com/s2/favicons?domain={domain}&sz=32",
+                        headers={"User-Agent":"Mozilla/5.0"})
+                    raw = _ureq.urlopen(req, timeout=5).read()
+                    img = PILImage.open(_io.BytesIO(raw)).convert("RGBA").resize((16,16), PILImage.LANCZOS)
+                    img.save(cp, "PNG")
+            except: pass
+            with cls._lock:
+                cls._mem[domain] = img
+                cls._pending.discard(domain)
+            on_done(img)
+        threading.Thread(target=_fetch, daemon=True).start()
+
+# ── Playground overlay ────────────────────────────────────────────────────────
+class PlaygroundOverlay:
+    """Full-screen zones board. Click = open URL. Edit mode = drag & reshape nodes."""
+
+    def __init__(self, app: "BranchApp"):
+        self._app       = app
+        self._edit      = False
+        self._data      = self._load_data()
+        self._laid_out  = False
+        self._fav_imgs: dict = {}    # nid → tk.PhotoImage (keep-alive)
+        self._hover_id  = None       # node id string
+        self._drag_nid  = None
+        self._drag_nd   = None
+        self._pan       = [0.0, 0.0]
+        self._scale     = 1.0
+        self._pan_start = None
+        self._node_map: dict = {}    # canvas_item_id → node dict
+        self._zone_map: dict = {}
+
+        self.win = tk.Toplevel(app.root)
+        self.win.configure(bg=BG)
+        self.win.attributes("-topmost", True)
+        self.win.attributes("-alpha", 0.97)
+        self.win.attributes("-fullscreen", True)
+        self.win.title("Playground")
+        self._build_ui()
+        self.win.bind("<Escape>", lambda e: self._close())
+        self.win.after(120, self._draw)
+
+    # ── Persistence ───────────────────────────────────────────────────────────
+
+    def _load_data(self) -> dict:
+        if PLAYGROUND_FILE.exists():
+            try:
+                with open(PLAYGROUND_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except: pass
+        return _copy.deepcopy(LAURENCE_PRESET)
+
+    def _save(self):
+        try:
+            with open(PLAYGROUND_FILE, "w", encoding="utf-8") as f:
+                json.dump(self._data, f, indent=2, ensure_ascii=False)
+            self._status.config(text="Saved  ✓", fg=GREEN)
+            self.win.after(2000, lambda: self._status.config(
+                text="Drag to move  ·  dbl-click = change shape" if self._edit
+                else "Click = open in browser  ·  Ctrl+E = edit",
+                fg=FG_DIM if not self._edit else YELLOW))
+        except Exception as ex:
+            self._status.config(text=f"Save failed: {ex}", fg=RED)
+
+    # ── UI ────────────────────────────────────────────────────────────────────
+
+    def _build_ui(self):
+        bar = tk.Frame(self.win, bg=BG2, pady=4)
+        bar.pack(fill="x", side="top")
+
+        tk.Label(bar, text="🎮 Playground",
+                 font=("Consolas", 11, "bold"), fg=PURPLE, bg=BG2).pack(side="left", padx=12)
+
+        self._edit_btn = tk.Button(
+            bar, text="✏  Edit Mode", font=("Segoe UI", 8),
+            fg=YELLOW, bg=BG2, activebackground=BG3,
+            relief="flat", padx=10, pady=2, cursor="hand2",
+            command=self._toggle_edit)
+        self._edit_btn.pack(side="left", padx=4)
+
+        for txt, col, cmd in [
+            ("Laurence Preset", GREEN, self._load_laurence),
+            ("Import JSON",     BLUE,  self._import_json),
+            ("Export JSON",     TEAL,  self._export_json),
+            ("💾 Save",         GREEN, self._save),
+        ]:
+            tk.Button(bar, text=txt, font=("Segoe UI", 8), fg=col, bg=BG2,
+                      activebackground=BG3, relief="flat", padx=8, pady=2,
+                      cursor="hand2", command=cmd).pack(side="left", padx=2)
+
+        self._status = tk.Label(
+            bar, text="Click a node to open  ·  Ctrl+E = edit mode",
+            font=("Segoe UI", 7), fg=FG_DIM, bg=BG2)
+        self._status.pack(side="left", padx=10)
+
+        tk.Button(bar, text="✕ Close (Esc)", font=("Segoe UI", 8),
+                  fg=RED, bg=BG2, activebackground=BG3, relief="flat",
+                  padx=10, pady=2, cursor="hand2",
+                  command=self._close).pack(side="right", padx=4)
+
+        # Shape palette row (hidden until edit mode)
+        self._shape_row = tk.Frame(self.win, bg=BG3, pady=3)
+        self._shape_var = tk.StringVar(value="rounded")
+        tk.Label(self._shape_row, text="Shape:",
+                 font=("Segoe UI", 8, "bold"), fg=FG, bg=BG3).pack(side="left", padx=(12,4))
+        for sh in SHAPES:
+            tk.Radiobutton(
+                self._shape_row, text=sh.title(), variable=self._shape_var, value=sh,
+                font=("Segoe UI", 8), fg=FG, bg=BG3, selectcolor=BG2,
+                activebackground=BG3, cursor="hand2"
+            ).pack(side="left", padx=5)
+        tk.Label(self._shape_row,
+                 text="   ← select then double-click a node to apply",
+                 font=("Segoe UI", 7), fg=FG_DIM, bg=BG3).pack(side="left", padx=6)
+
+        hint = tk.Frame(self.win, bg=BG2, pady=3)
+        hint.pack(fill="x", side="bottom")
+        tk.Label(hint,
+                 text="Click = open browser  ·  Ctrl+E = edit  ·  Scroll = zoom  "
+                      "·  Right-drag = pan  ·  Esc = close",
+                 font=("Segoe UI", 7), fg=FG_DIM, bg=BG2).pack()
+
+        self._c = tk.Canvas(self.win, bg=BG, highlightthickness=0, cursor="arrow")
+        self._c.pack(fill="both", expand=True)
+
+        self._c.bind("<Configure>",        self._on_resize)
+        self._c.bind("<Motion>",           self._on_hover)
+        self._c.bind("<Button-1>",         self._on_lclick)
+        self._c.bind("<Double-Button-1>",  self._on_dbl)
+        self._c.bind("<B1-Motion>",        self._on_drag)
+        self._c.bind("<ButtonRelease-1>",  self._on_release)
+        self._c.bind("<ButtonPress-3>",    self._pan_begin)
+        self._c.bind("<B3-Motion>",        self._pan_do)
+        self._c.bind("<ButtonPress-2>",    self._pan_begin)
+        self._c.bind("<B2-Motion>",        self._pan_do)
+        self._c.bind("<MouseWheel>",       self._zoom)
+        self.win.bind("<Control-e>",       lambda e: self._toggle_edit())
+
+    # ── Coordinate helpers ────────────────────────────────────────────────────
+
+    def _cw(self): return self._c.winfo_width()  or 1200
+    def _ch(self): return self._c.winfo_height() or 800
+
+    def _fw(self, xf): return xf * self._cw() * self._scale + self._pan[0]
+    def _fh(self, yf): return yf * self._ch() * self._scale + self._pan[1]
+
+    def _zone_rect(self, zone: dict):
+        cx = self._fw(zone["cx"])
+        cy = self._fh(zone["cy"])
+        zw = zone["w"] * self._cw() * self._scale
+        zh = zone["h"] * self._ch() * self._scale
+        return cx - zw/2, cy - zh/2, zw, zh
+
+    def _to_frac(self, sx, sy):
+        sc = self._scale or 1.0
+        return ((sx - self._pan[0]) / (self._cw() * sc),
+                (sy - self._pan[1]) / (self._ch() * sc))
+
+    # ── Layout ────────────────────────────────────────────────────────────────
+
+    def _layout_nodes(self):
+        for zone in self._data.get("zones", []):
+            zx, zy, zw, zh = self._zone_rect(zone)
+            nodes = [n for n in zone.get("nodes", [])
+                     if n.get("xf", 0.0) == 0.0 and n.get("yf", 0.0) == 0.0]
+            if not nodes: continue
+            pad = 8; hdr = 24
+            avail_w = max(60, zw - 2*pad)
+            n = len(nodes)
+            cols = max(1, math.ceil(math.sqrt(n * avail_w / max(1, zh - hdr))))
+            nw = max(50, (avail_w - (cols-1)*5) / cols)
+            nh = 30
+            for i, nd in enumerate(nodes):
+                col = i % cols; row = i // cols
+                sx = zx + pad + col*(nw+5) + nw/2
+                sy = zy + hdr + pad + row*(nh+6) + nh/2
+                nd["xf"], nd["yf"] = self._to_frac(sx, sy)
+                nd["w"], nd["h"] = nw, nh
+        self._laid_out = True
+
+    # ── Drawing ───────────────────────────────────────────────────────────────
+
+    def _draw(self):
+        c = self._c
+        if not self._laid_out:
+            self._layout_nodes()
+            self.win.after(200, self._load_favicons)
+        c.delete("all")
+        self._node_map.clear()
+        self._zone_map.clear()
+
+        for zone in self._data.get("zones", []):
+            zx, zy, zw, zh = self._zone_rect(zone)
+            col = zone.get("color", BLUE)
+            fill_col = _blend(col, 0.13)
+            r = min(14, zh*0.05, zw*0.05)
+            pts = [zx+r,zy, zx+zw-r,zy, zx+zw,zy+r, zx+zw,zy+zh-r,
+                   zx+zw-r,zy+zh, zx+r,zy+zh, zx,zy+zh-r, zx,zy+r]
+            zid = c.create_polygon(*pts, smooth=True,
+                                   fill=fill_col, outline=col, width=1, tags="zone")
+            self._zone_map[zid] = zone
+            hdr_h = min(22, zh*0.15)
+            c.create_text(zx+10, zy+hdr_h/2, text=zone.get("title",""),
+                          font=("Segoe UI", 8, "bold"), fill=col, anchor="w")
+
+            for nd in zone.get("nodes", []):
+                nx = self._fw(nd.get("xf", zone["cx"]))
+                ny = self._fh(nd.get("yf", zone["cy"]))
+                nw = max(44, nd.get("w", 100) * self._scale)
+                nh = max(18, nd.get("h", 30) * self._scale)
+                ncol = nd.get("color", col)
+                is_hov = nd.get("id") == self._hover_id
+                fill_n = _blend(ncol, 0.4 if is_hov else 0.2)
+                out_n  = ncol if is_hov else _blend(ncol, 0.6)
+                lw     = 2 if is_hov else 1
+                sids = _draw_shape(c, nd.get("shape","rounded"), nx, ny, nw, nh,
+                                   fill=fill_n, outline=out_n, width=lw, tags="node")
+                for sid in sids:
+                    self._node_map[sid] = nd
+
+                # Favicon
+                fav = self._fav_imgs.get(nd.get("id",""))
+                tx_off = 0
+                if fav:
+                    fid = c.create_image(nx - nw/2 + 11, ny, image=fav,
+                                         anchor="center", tags="node")
+                    self._node_map[fid] = nd
+                    tx_off = 9
+
+                # Label
+                chars = max(3, int(nw / 6.8))
+                title = nd.get("title","")
+                if len(title) > chars: title = title[:chars-1]+"…"
+                tid = c.create_text(
+                    nx + tx_off, ny, text=title,
+                    font=("Segoe UI", 7, "bold" if is_hov else "normal"),
+                    fill=FG if is_hov else _blend(FG, 0.75),
+                    anchor="center", width=nw-6, tags="node")
+                self._node_map[tid] = nd
+
+                if self._edit:
+                    c.create_oval(nx+nw/2-8, ny-nh/2+1,
+                                  nx+nw/2-2, ny-nh/2+7,
+                                  fill=YELLOW, outline="", tags="node")
+
+    # ── Favicons (background thread pool, disk + memory cache) ────────────────
+
+    def _load_favicons(self):
+        from PIL import ImageTk as _ItK
+        for zone in self._data.get("zones", []):
+            for nd in zone.get("nodes", []):
+                nid = nd.get("id",""); url = nd.get("url","")
+                if not url or nid in self._fav_imgs: continue
+                def _done(pil_img, _nid=nid):
+                    if pil_img is None: return
+                    try:
+                        self._fav_imgs[_nid] = _ItK.PhotoImage(pil_img)
+                        try: self.win.after(0, self._draw)
+                        except: pass
+                    except: pass
+                FaviconLoader.get(url, _done)
+
+    # ── Interaction ───────────────────────────────────────────────────────────
+
+    def _hit_node(self, ex, ey):
+        for iid in self._c.find_closest(ex, ey, halo=12):
+            if iid in self._node_map:
+                return self._node_map[iid]
+        return None
+
+    def _on_hover(self, e):
+        nd = self._hit_node(e.x, e.y)
+        new_id = nd.get("id","") if nd else None
+        if new_id != self._hover_id:
+            self._hover_id = new_id
+            self._draw()
+            self._c.config(cursor=("hand2" if nd else ("fleur" if self._edit else "arrow")))
+
+    def _on_lclick(self, e):
+        if self._edit:
+            nd = self._hit_node(e.x, e.y)
+            self._drag_nid = nd.get("id") if nd else None
+            self._drag_nd  = nd
+            return
+        nd = self._hit_node(e.x, e.y)
+        if nd:
+            url = nd.get("url","")
+            if url:
+                threading.Thread(target=lambda: _wb.open(url), daemon=True).start()
+
+    def _on_dbl(self, e):
+        nd = self._hit_node(e.x, e.y)
+        if not nd: return
+        if self._edit:
+            nd["shape"] = self._shape_var.get()
+            self._draw()
+        else:
+            url = nd.get("url","")
+            if url:
+                threading.Thread(target=lambda: _wb.open(url), daemon=True).start()
+
+    def _on_drag(self, e):
+        if not self._edit or not self._drag_nid: return
+        nd = self._drag_nd
+        if nd:
+            nd["xf"], nd["yf"] = self._to_frac(e.x, e.y)
+            self._draw()
+
+    def _on_release(self, e):
+        self._drag_nid = None
+        self._drag_nd  = None
+
+    def _pan_begin(self, e):
+        self._pan_start = (e.x, e.y, self._pan[0], self._pan[1])
+
+    def _pan_do(self, e):
+        if not self._pan_start: return
+        sx, sy, px, py = self._pan_start
+        self._pan[0] = px + e.x - sx
+        self._pan[1] = py + e.y - sy
+        self._draw()
+
+    def _zoom(self, e):
+        f = 1.1 if e.delta > 0 else 0.9
+        old = self._scale
+        self._scale = max(0.25, min(3.5, self._scale * f))
+        # Zoom toward mouse pointer
+        ratio = self._scale / old
+        self._pan[0] = e.x + (self._pan[0] - e.x) * ratio
+        self._pan[1] = e.y + (self._pan[1] - e.y) * ratio
+        self._draw()
+
+    def _on_resize(self, e):
+        if self._laid_out:
+            self._draw()
+        else:
+            self._layout_nodes()
+            self._draw()
+            self.win.after(300, self._load_favicons)
+
+    # ── Edit toggle ───────────────────────────────────────────────────────────
+
+    def _toggle_edit(self):
+        self._edit = not self._edit
+        if self._edit:
+            self._edit_btn.config(text="👁  View Mode", fg=GREEN)
+            self._shape_row.pack(fill="x", side="top", before=self._c)
+            self._status.config(
+                text="Drag to move  ·  double-click node = apply shape  ·  Ctrl+E = exit edit",
+                fg=YELLOW)
+            self._c.config(cursor="fleur")
+        else:
+            self._edit_btn.config(text="✏  Edit Mode", fg=YELLOW)
+            self._shape_row.pack_forget()
+            self._status.config(text="Click = open in browser  ·  Ctrl+E = edit mode", fg=FG_DIM)
+            self._c.config(cursor="arrow")
+        self._draw()
+
+    # ── Preset / Import / Export ──────────────────────────────────────────────
+
+    def _load_laurence(self):
+        self._data     = _copy.deepcopy(LAURENCE_PRESET)
+        self._laid_out = False
+        self._fav_imgs.clear()
+        FaviconLoader._mem.clear()
+        self.win.after(100, lambda: (self._layout_nodes(), self._draw(),
+                                     self.win.after(300, self._load_favicons)))
+
+    def _import_json(self):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title="Import Playground JSON",
+            filetypes=[("JSON","*.json"),("All","*.*")],
+            parent=self.win)
+        if not path: return
+        try:
+            with open(path,"r",encoding="utf-8") as f:
+                self._data = json.load(f)
+            self._laid_out = False
+            self._fav_imgs.clear()
+            self.win.after(100, lambda: (self._layout_nodes(), self._draw(),
+                                         self.win.after(300, self._load_favicons)))
+        except Exception as ex:
+            self._status.config(text=f"Import error: {ex}", fg=RED)
+
+    def _export_json(self):
+        from tkinter import filedialog
+        name = self._data.get("name","preset").replace(" ","_")
+        path = filedialog.asksaveasfilename(
+            title="Export Playground JSON",
+            defaultextension=".json",
+            filetypes=[("JSON","*.json")],
+            parent=self.win,
+            initialfile=f"playground_{name}.json")
+        if not path: return
+        try:
+            with open(path,"w",encoding="utf-8") as f:
+                json.dump(self._data, f, indent=2, ensure_ascii=False)
+            self._status.config(text=f"Exported  ✓", fg=TEAL)
+        except Exception as ex:
+            self._status.config(text=f"Export error: {ex}", fg=RED)
+
+    # ── Close ─────────────────────────────────────────────────────────────────
+
+    def _close(self):
+        try: self.win.destroy()
+        except: pass
+        try: self._app._playground = None
+        except: pass
+
 # ── App ────────────────────────────────────────────────────────────────────────
 class BranchApp:
     def __init__(self):
@@ -966,6 +1538,15 @@ class BranchApp:
                 pystray.MenuItem("Full         (95%)",  _af(0.95, "95%")),
             )),
 
+            # ── Playground ───────────────────────────────────────────────
+            pystray.MenuItem("Playground  ▸", pystray.Menu(
+                pystray.MenuItem("🎮  Open Playground",
+                                 lambda: self.root.after(0, self._open_playground)),
+                pystray.MenuItem("🗺  Load Laurence Preset",
+                                 lambda: self.root.after(0, self._load_laurence_preset)),
+            )),
+            pystray.Menu.SEPARATOR,
+
             # ── Utilities ────────────────────────────────────────────────
             pystray.MenuItem("Zones overlay",
                              lambda: self._do_overlay("_open_zones")),
@@ -985,6 +1566,20 @@ class BranchApp:
         self._tray_icon = pystray.Icon("branch", img,
                                        f"Branch v{__version__}", menu)
         threading.Thread(target=self._tray_icon.run, daemon=True).start()
+
+    def _open_playground(self):
+        pg = getattr(self, '_playground', None)
+        if pg:
+            try: pg.win.lift(); return
+            except: self._playground = None
+        self._playground = PlaygroundOverlay(self)
+
+    def _load_laurence_preset(self):
+        pg = getattr(self, '_playground', None)
+        if pg:
+            try: pg._load_laurence(); pg.win.lift(); return
+            except: self._playground = None
+        self._playground = PlaygroundOverlay(self)
 
     def _quit(self, *_):
         self._state.update(self._osc.to_state())
