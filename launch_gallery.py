@@ -7,7 +7,7 @@ Usage:
   python launch_gallery.py
   python launch_level.py 4
 """
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 import selfclean; selfclean.ensure_single("launch_gallery.py")
 
 import json, os, subprocess, sys, time, threading, tkinter as tk
@@ -110,8 +110,20 @@ APPS = [
      "category": "Session Management"},
     {"script": "laurence_triclick.exe", "name": "TriClick", "icon": "TC", "color": "#fab387", "level": 2,
      "problem": "You say what you want the computer to do. It doesn't happen. No way to train it.",
-     "solution": "Triple right-click anywhere. Voice command via Whisper. Train button maps phrases to actions. Builds a personal command dataset. Browser tab switcher in tray.",
+     "solution": "Triple right-click anywhere. Voice command via Whisper. Train button maps phrases to actions. Multi-whisper: each voice command gets its own popup, spread left-to-right. Rust binary.",
      "category": "AI & Voice"},
+    {"script": "windowbot.py", "name": "WindowBot", "icon": "WB", "color": "#89b4fa", "level": 2,
+     "problem": "You want to tell the computer what to do with your windows in plain English.",
+     "solution": "Type anything naturally. Claude API interprets it and shows the right win32 action as a button. Learns every phrase into a skills bin — instant next time. Bot Prompt dev panel included.",
+     "category": "AI & Voice"},
+    {"script": "screenrouter.py", "name": "ScreenRouter", "icon": "SR", "color": "#f9e2af", "level": 2,
+     "problem": "You take a ShareX screenshot but it just sits in a folder. No notes, no routing, no record.",
+     "solution": "Watches ShareX folder. New screenshot pops up asking what you want to say. Thumbnail, notes, tags, then routes to email (default), Desktop, or Lawrence Suite apps. JSON inbox for bots.",
+     "category": "Productivity"},
+    {"script": "windowbranch.py", "name": "Branch", "icon": "BR", "color": "#d2a8ff", "level": 3,
+     "problem": "You come back from a break and have no idea what you were doing or what's open.",
+     "solution": "Ctrl+Alt+B: full-screen radial branch map of every open window and browser tab. Human-heartbeat oscillator cycles through them. Click to jump. Zones mode shows screen-position map.",
+     "category": "Window Management"},
 ]
 
 CATEGORIES = ["Window Management", "Productivity", "AI & Voice", "Session Management", "External Tools"]
@@ -141,6 +153,43 @@ def save_external_apps(apps):
 
 def get_all_apps():
     return APPS + load_external_apps()
+
+# -- Windows startup ---------------------------------------------------------------
+_REG_KEY  = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_REG_NAME = "LawrenceMoveInGallery"
+
+def _is_startup_enabled() -> bool:
+    try:
+        import winreg
+        k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _REG_KEY, 0, winreg.KEY_READ)
+        winreg.QueryValueEx(k, _REG_NAME)
+        winreg.CloseKey(k)
+        return True
+    except:
+        return False
+
+def _enable_startup():
+    try:
+        import winreg
+        pythonw = str(Path(sys.executable).with_name("pythonw.exe"))
+        script  = str(SCRIPT_DIR / "launch_gallery.py")
+        cmd     = f'"{pythonw}" "{script}"'
+        k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _REG_KEY, 0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(k, _REG_NAME, 0, winreg.REG_SZ, cmd)
+        winreg.CloseKey(k)
+        return True
+    except:
+        return False
+
+def _disable_startup():
+    try:
+        import winreg
+        k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _REG_KEY, 0, winreg.KEY_SET_VALUE)
+        winreg.DeleteValue(k, _REG_NAME)
+        winreg.CloseKey(k)
+        return True
+    except:
+        return False
 
 # -- Helpers -----------------------------------------------------------------------
 def get_running():
@@ -273,11 +322,24 @@ class GalleryLauncher:
                     relief="flat", padx=20, pady=6, cursor="hand2",
                     command=self._launch_all)
         self.run_btn.pack(side="right", padx=(8, 0))
+        tk.Button(btn_frame, text="\u21bb  Refresh",
+                  font=("Segoe UI", 10, "bold"), fg="#ffffff", bg="#a6e3a1",
+                  activeforeground="#ffffff", activebackground="#8ecf8e",
+                  relief="flat", padx=14, pady=6, cursor="hand2",
+                  command=self._refresh).pack(side="right", padx=(4, 0))
         tk.Button(btn_frame, text="+ Add App",
                   font=("Segoe UI", 10, "bold"), fg="#ffffff", bg="#f5c2e7",
                   activeforeground="#ffffff", activebackground="#e8a7d4",
                   relief="flat", padx=14, pady=6, cursor="hand2",
                   command=self._show_add_dialog).pack(side="right", padx=(4, 8))
+        # Startup toggle
+        self._startup_var = tk.BooleanVar(value=_is_startup_enabled())
+        tk.Checkbutton(btn_frame, text="Start with Windows",
+                       variable=self._startup_var,
+                       font=("Segoe UI", 9), fg="#8b82a8", bg="#ffffff",
+                       selectcolor="#ffffff", activebackground="#ffffff",
+                       relief="flat", bd=0,
+                       command=self._toggle_startup).pack(side="right", padx=(0, 12))
 
         tk.Frame(root, bg="#e8e6f0", height=2).pack(fill="x")
 
@@ -358,6 +420,57 @@ class GalleryLauncher:
             self._update_running_count()
         except tk.TclError:
             pass
+
+    def _refresh(self):
+        """Scan niggly_machine/ for new .py files not yet in APPS or external_apps.
+        Add any newcomers as External Tools, then rebuild the gallery."""
+        known_scripts = {a["script"] for a in APPS}
+        external = load_external_apps()
+        known_scripts |= {a["script"] for a in external}
+
+        added = 0
+        for py in sorted(SCRIPT_DIR.glob("*.py")):
+            fname = py.name
+            # Skip infrastructure / support files
+            if fname in known_scripts: continue
+            if fname.startswith(("_", "make_", "kill_", "launch_",
+                                  "selfclean", "test_", "setup")):
+                continue
+            # It's a new app — add as External Tool
+            name = fname.replace(".py", "").replace("_", " ").title()
+            external.append({
+                "script": fname,
+                "name":   name,
+                "icon":   name[:2].upper(),
+                "color":  EXTERNAL_COLORS[len(external) % len(EXTERNAL_COLORS)],
+                "category": "External Tools",
+                "problem": f"{name} found in suite folder.",
+                "solution": f"Click to launch {fname}.",
+            })
+            added += 1
+
+        if added:
+            save_external_apps(external)
+            self.status_label.config(
+                text=f"Refresh: {added} new app{'s' if added > 1 else ''} added.")
+        else:
+            self.status_label.config(text="Refresh: gallery is up to date.")
+
+        self._rebuild_gallery()
+
+    def _toggle_startup(self):
+        if self._startup_var.get():
+            ok = _enable_startup()
+            self.status_label.config(
+                text="Gallery will launch at Windows startup." if ok
+                else "Could not write to registry.",
+                fg="#6c5ce7" if ok else "#f38ba8")
+        else:
+            ok = _disable_startup()
+            self.status_label.config(
+                text="Removed from Windows startup." if ok
+                else "Could not write to registry.",
+                fg="#8b82a8" if ok else "#f38ba8")
 
     def _make_card(self, parent, app, index):
         col = app["color"]
