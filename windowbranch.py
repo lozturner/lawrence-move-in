@@ -6,7 +6,7 @@ oscillator cycling through nodes. Click any node → jump there.
 Zones overlay: shows windows mapped to actual screen positions.
 Hotkey: Ctrl+Alt+B  |  Tray icon  |  Auto-shows on idle (optional)
 """
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 import selfclean; selfclean.ensure_single("windowbranch.py")
 
 import ctypes, json, math, os, random, sys, threading, time
@@ -396,7 +396,7 @@ class ZonesOverlay:
         self.win = tk.Toplevel(parent)
         self.win.configure(bg=BG)
         self.win.attributes("-topmost", True)
-        self.win.attributes("-alpha", 0.94)
+        self.win.attributes("-alpha", 0.10)
         self.win.geometry(f"{W}x{H}+{sw//2-W//2}+{sh//2-H//2}")
         self.win.title("Zones")
         self.win.resizable(True, True)
@@ -576,7 +576,7 @@ class BranchOverlay:
         self.win = tk.Toplevel(root)
         self.win.configure(bg=BG)
         self.win.attributes("-topmost", True)
-        self.win.attributes("-alpha", 0.94)
+        self.win.attributes("-alpha", 0.10)
         self.win.attributes("-fullscreen", True)
         self.win.title("Branch")
         self.win.focus_force()
@@ -586,9 +586,11 @@ class BranchOverlay:
         self.win.bind("<space>",  lambda e: self._advance())
         self.win.bind("<Return>", lambda e: self._go_active())
 
+        self._note_open = False
         self._build_chrome()
         self._rescan()
         self._osc.start(lambda: root.after(0, self._advance))
+        self._start_wiggle_watch()
 
     def _build_chrome(self):
         # Top bar
@@ -601,16 +603,25 @@ class BranchOverlay:
         self._status_lbl.pack(side="left", padx=4)
 
         for txt, cmd, col in [
-            ("✕ Close (Esc)", self._close,      RED),
-            ("⊞ Zones",       self._open_zones, PURPLE),
+            ("✕ Close (Esc)", self._close,         RED),
+            ("⊞ Zones",       self._open_zones,    PURPLE),
             ("⚙ Settings",    self._open_settings, BLUE),
-            ("↻ Scan (F5)",   self._rescan,     GREEN),
+            ("↻ Scan (F5)",   self._rescan,        GREEN),
         ]:
             tk.Button(bar, text=txt, font=("Segoe UI", 8),
                       fg=col, bg=BG2, activebackground=BG3,
                       activeforeground=col, relief="flat",
                       padx=10, pady=2, cursor="hand2",
                       command=cmd).pack(side="right", padx=1)
+
+        # Play/pause button
+        self._paused = False
+        self._pp_btn = tk.Button(bar, text="⏸ Pause", font=("Segoe UI", 8, "bold"),
+                                  fg=YELLOW, bg=BG2, activebackground=BG3,
+                                  activeforeground=YELLOW, relief="flat",
+                                  padx=10, pady=2, cursor="hand2",
+                                  command=self._toggle_pause)
+        self._pp_btn.pack(side="right", padx=1)
 
         # Canvas area (filled between bar and hint)
         self._canvas_host = tk.Frame(self.win, bg=BG)
@@ -620,9 +631,66 @@ class BranchOverlay:
         hint = tk.Frame(self.win, bg=BG2, pady=3)
         hint.pack(fill="x", side="bottom")
         tk.Label(hint,
-                 text="Click node → go there  ·  Space / Enter → go to highlighted  ·  "
-                      "Scroll = zoom  ·  Right-drag = pan  ·  F5 = rescan  ·  Esc = close",
+                 text="Oscillator cycles + focuses each window/tab live  ·  Click node → jump  ·  "
+                      "Wiggle mouse ← → ← → to add a note  ·  Enter = go to active  ·  Esc = close",
                  font=("Segoe UI", 7), fg=FG_DIM, bg=BG2).pack()
+
+    def _toggle_pause(self):
+        self._paused = not self._paused
+        if self._paused:
+            self._osc.stop()
+            self._pp_btn.config(text="▶ Play")
+        else:
+            self._osc.start(lambda: self._root.after(0, self._advance))
+            self._pp_btn.config(text="⏸ Pause")
+
+    def _start_wiggle_watch(self):
+        """Background thread: detect rapid mouse direction reversals → note popup."""
+        history = []   # (x, timestamp)
+        WINDOW_MS  = 600    # look-back window
+        REVERSALS  = 4      # direction changes needed
+        MIN_DIST   = 30     # pixels per movement to count
+
+        def _watch():
+            prev_x = None
+            prev_dir = 0
+            rev_count = 0
+            rev_times = []
+
+            while getattr(self, '_watching', True):
+                time.sleep(0.04)
+                try:
+                    pt = win32api.GetCursorPos()
+                    x = pt[0]
+                    if prev_x is None:
+                        prev_x = x; continue
+                    dx = x - prev_x
+                    if abs(dx) < MIN_DIST / 4:
+                        prev_x = x; continue
+                    direction = 1 if dx > 0 else -1
+                    if prev_dir != 0 and direction != prev_dir and abs(dx) > MIN_DIST / 4:
+                        rev_count += 1
+                        rev_times.append(time.time())
+                    prev_dir = direction
+                    prev_x = x
+
+                    # Clear old events outside window
+                    now = time.time()
+                    rev_times = [t for t in rev_times if now - t < WINDOW_MS / 1000]
+                    rev_count = len(rev_times)
+
+                    if rev_count >= REVERSALS:
+                        rev_times.clear()
+                        rev_count = 0
+                        # Fire note popup on main thread
+                        if self._bc:
+                            node = self._bc.get_active_node()
+                            if node:
+                                self._root.after(0, lambda n=node: self._note_popup(n))
+                except: pass
+
+        self._watching = True
+        threading.Thread(target=_watch, daemon=True).start()
 
     def _rescan(self):
         self._status_lbl.config(text="Scanning…", fg=YELLOW)
@@ -652,18 +720,85 @@ class BranchOverlay:
         self._bc.pack(fill="both", expand=True)
 
     def _advance(self):
-        if self._bc:
-            self._bc.set_active(self._bc._active + 1)
+        if not self._bc: return
+        self._bc.set_active(self._bc._active + 1)
+        node = self._bc.get_active_node()
+        if node:
+            focus_node(node)   # actually bring the window/tab forward as we cycle
 
     def _go_active(self):
         if self._bc:
             node = self._bc.get_active_node()
             if node:
-                self._select(node)
+                self._close()
+                focus_node(node)
 
     def _select(self, node: WNode):
         self._close()
         focus_node(node)
+
+    def _note_popup(self, node: WNode):
+        """Small note popup for the currently highlighted window/tab."""
+        if getattr(self, '_note_open', False): return
+        self._note_open = True
+
+        sw = self.win.winfo_screenwidth()
+        sh = self.win.winfo_screenheight()
+        pop = tk.Toplevel(self.win)
+        pop.configure(bg=BG2)
+        pop.attributes("-topmost", True)
+        pop.attributes("-alpha", 0.95)
+        pop.resizable(False, False)
+        pop.geometry(f"320x130+{sw//2-160}+{sh//2-65}")
+        pop.overrideredirect(True)   # borderless
+
+        title = (node.title[:40] + "…") if len(node.title) > 40 else node.title
+        tk.Label(pop, text=title, font=("Segoe UI", 8, "bold"),
+                 fg=BLUE, bg=BG2, anchor="w").pack(fill="x", padx=10, pady=(10,2))
+        tk.Label(pop, text="What are you doing here?",
+                 font=("Segoe UI", 9), fg=FG, bg=BG2).pack(anchor="w", padx=10)
+
+        entry = tk.Entry(pop, font=("Segoe UI", 10), bg=BG3, fg=FG,
+                         insertbackground=BLUE, relief="flat",
+                         highlightthickness=1, highlightbackground=BLUE)
+        entry.pack(fill="x", padx=10, pady=(4, 0), ipady=5)
+        entry.focus_force()
+
+        def _save(e=None):
+            text = entry.get().strip()
+            if text:
+                notes = []
+                nf = SCRIPT_DIR / "windowbranch_notes.json"
+                if nf.exists():
+                    try: notes = json.load(open(nf))
+                    except: pass
+                notes.append({
+                    "ts":    time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "window": node.title,
+                    "exe":   node.exe,
+                    "note":  text,
+                    "is_tab": node.is_tab,
+                })
+                try: json.dump(notes[-200:], open(nf, "w"), indent=2)
+                except: pass
+            pop.destroy()
+            self._note_open = False
+
+        def _cancel(e=None):
+            pop.destroy()
+            self._note_open = False
+
+        btn_row = tk.Frame(pop, bg=BG2)
+        btn_row.pack(fill="x", padx=10, pady=6)
+        tk.Button(btn_row, text="Save  ↵", font=("Segoe UI", 8, "bold"),
+                  fg=BG, bg=GREEN, relief="flat", padx=10, pady=2,
+                  command=_save).pack(side="right", padx=(4,0))
+        tk.Button(btn_row, text="Skip", font=("Segoe UI", 8),
+                  fg=FG_DIM, bg=BG3, relief="flat", padx=8, pady=2,
+                  command=_cancel).pack(side="right")
+
+        entry.bind("<Return>", _save)
+        entry.bind("<Escape>", _cancel)
 
     def _open_settings(self):
         if self._settings_open: return
@@ -680,6 +815,7 @@ class BranchOverlay:
                      on_close=lambda: setattr(self, '_zones_open', False))
 
     def _close(self):
+        self._watching = False
         self._osc.stop()
         try: self.win.destroy()
         except: pass
@@ -748,6 +884,10 @@ class BranchApp:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Show Branch",
                              lambda: self.root.after(0, self._show)),
+            pystray.MenuItem("Pause / Play",
+                             lambda: self.root.after(0,
+                                 lambda: self._overlay._toggle_pause()
+                                 if self._overlay else None)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", self._quit),
         )
