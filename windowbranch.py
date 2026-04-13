@@ -6,7 +6,7 @@ oscillator cycling through nodes. Click any node → jump there.
 Zones overlay: shows windows mapped to actual screen positions.
 Hotkey: Ctrl+Alt+B  |  Tray icon  |  Auto-shows on idle (optional)
 """
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 import selfclean; selfclean.ensure_single("windowbranch.py")
 
 import ctypes, json, math, os, random, sys, threading, time
@@ -578,7 +578,7 @@ class BranchOverlay:
         self.win.attributes("-topmost", True)
         self.win.attributes("-alpha", 0.10)
         self.win.attributes("-fullscreen", True)
-        self.win.title("Branch")
+        self.win.title(f"Branch v{__version__}")
         self.win.focus_force()
 
         self.win.bind("<Escape>", lambda e: self._close())
@@ -863,33 +863,124 @@ class BranchApp:
                 self._show()
         self.root.after(10_000, self._idle_check)
 
+    def _set_alpha(self, a: float):
+        self._state["alpha"] = a
+        if self._overlay:
+            self._overlay.win.attributes("-alpha", a)
+
+    def _set_speed(self, base_ms: int, label: str):
+        self._osc.base_ms = base_ms
+        self._state["osc_base_ms"] = base_ms
+        if self._overlay:
+            self._overlay._osc.base_ms = base_ms
+            self._overlay._status_lbl.config(text=f"Speed: {label}", fg=YELLOW)
+
+    def _do_overlay(self, fn_name: str):
+        """Call a method on the overlay if it exists, else show first."""
+        def _run():
+            if not self._overlay:
+                self._show()
+                self.root.after(800, lambda: getattr(self._overlay, fn_name, lambda: None)())
+            else:
+                getattr(self._overlay, fn_name, lambda: None)()
+        self.root.after(0, _run)
+
+    def _rescan_now(self):
+        if self._overlay:
+            self.root.after(0, self._overlay._rescan)
+
+    def _check_dupes(self):
+        """Check for duplicate windows in the scan and report."""
+        nodes = scan_windows()
+        seen: dict[str, list] = {}
+        for n in nodes:
+            seen.setdefault(n.title, []).append(n.exe)
+        dupes = {t: e for t, e in seen.items() if len(e) > 1}
+        if dupes:
+            lines = [f"{t[:35]}: {', '.join(e)}" for t, e in list(dupes.items())[:10]]
+            msg = f"Duplicates found ({len(dupes)}):\n\n" + "\n".join(lines)
+        else:
+            flat = flatten(nodes)
+            msg = f"No duplicates. {len(nodes)} windows, {len(flat)} total nodes."
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(0, msg, "Branch — Duplicate Check", 0x40)
+
+    def _relaunch(self):
+        """Kill self and relaunch fresh."""
+        import subprocess
+        script = str(SCRIPT_DIR / "windowbranch.py")
+        pw     = str(Path(sys.executable).with_name("pythonw.exe"))
+        subprocess.Popen([pw, script], creationflags=0x8, cwd=str(SCRIPT_DIR))
+        self._quit()
+
     def _build_tray(self):
         img = PILImage.new("RGBA", (64, 64), (0,0,0,0))
         d   = ImageDraw.Draw(img)
-        # Branch icon: root dot + 4 branch lines + leaf dots
         cx, cy = 32, 12
         d.ellipse([cx-5, cy-5, cx+5, cy+5], fill=BLUE)
-        branches = [(16, 30, GREEN), (48, 30, PURPLE)]
-        for bx, by, col in branches:
+        for bx, by, col in [(16, 30, GREEN), (48, 30, PURPLE)]:
             d.line([cx, cy+5, bx, by], fill=col, width=2)
             d.ellipse([bx-5,by-5,bx+5,by+5], fill=col)
-            d.line([bx-10, by+14, bx, by+5], fill=col, width=1)
-            d.line([bx+10, by+14, bx, by+5], fill=col, width=1)
+            d.line([bx-10,by+14,bx,by+5], fill=col, width=1)
+            d.line([bx+10,by+14,bx,by+5], fill=col, width=1)
             d.ellipse([bx-15,by+10,bx-5,by+20], fill=col)
             d.ellipse([bx+5, by+10,bx+15,by+20], fill=col)
 
+        def _af(a, lbl): return lambda: self._set_alpha(a)
+        def _sp(ms, lbl): return lambda: self._set_speed(ms, lbl)
+
         menu = pystray.Menu(
-            pystray.MenuItem(f"Branch v{__version__}", None, enabled=False),
-            pystray.MenuItem("Ctrl+Alt+B to toggle", None, enabled=False),
+            pystray.MenuItem(f"Branch v{__version__}  ·  Ctrl+Alt+B", None, enabled=False),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Show Branch",
+
+            # ── Show / control ──────────────────────────────────────────
+            pystray.MenuItem("▶  Show Branch",
                              lambda: self.root.after(0, self._show)),
-            pystray.MenuItem("Pause / Play",
+            pystray.MenuItem("⏸  Pause / Play",
                              lambda: self.root.after(0,
                                  lambda: self._overlay._toggle_pause()
                                  if self._overlay else None)),
+            pystray.MenuItem("↻  Re-scan Windows",
+                             lambda: self._rescan_now()),
+            pystray.MenuItem("✕  Close Overlay",
+                             lambda: self.root.after(0,
+                                 lambda: self._overlay._close()
+                                 if self._overlay else None)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Quit", self._quit),
+
+            # ── Speed presets ────────────────────────────────────────────
+            pystray.MenuItem("Speed  ▸", pystray.Menu(
+                pystray.MenuItem("🐢  Slow          (8 s)",  _sp(8000,  "Slow")),
+                pystray.MenuItem("🚶  Normal        (4 s)",  _sp(4000,  "Normal")),
+                pystray.MenuItem("🏃  Fast          (2 s)",  _sp(2000,  "Fast")),
+                pystray.MenuItem("⚡  Quick mode    (0.8s)", _sp(800,   "Quick mode")),
+                pystray.MenuItem("💀  Ludicrous     (0.3s)", _sp(300,   "Ludicrous")),
+            )),
+
+            # ── Opacity presets ──────────────────────────────────────────
+            pystray.MenuItem("Opacity  ▸", pystray.Menu(
+                pystray.MenuItem("Ghost        (10%)",  _af(0.10, "10%")),
+                pystray.MenuItem("Faint        (20%)",  _af(0.20, "20%")),
+                pystray.MenuItem("Half         (50%)",  _af(0.50, "50%")),
+                pystray.MenuItem("Solid        (85%)",  _af(0.85, "85%")),
+                pystray.MenuItem("Full         (95%)",  _af(0.95, "95%")),
+            )),
+
+            # ── Utilities ────────────────────────────────────────────────
+            pystray.MenuItem("Zones overlay",
+                             lambda: self._do_overlay("_open_zones")),
+            pystray.MenuItem("Settings panel",
+                             lambda: self._do_overlay("_open_settings")),
+            pystray.MenuItem("Check duplicates",
+                             lambda: threading.Thread(
+                                 target=self._check_dupes, daemon=True).start()),
+            pystray.Menu.SEPARATOR,
+
+            # ── System ───────────────────────────────────────────────────
+            pystray.MenuItem("🔄  Relaunch fresh",
+                             lambda: threading.Thread(
+                                 target=self._relaunch, daemon=True).start()),
+            pystray.MenuItem("Quit",  self._quit),
         )
         self._tray_icon = pystray.Icon("branch", img,
                                        f"Branch v{__version__}", menu)
