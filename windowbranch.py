@@ -9,7 +9,7 @@ Playground: full-screen bookmark board with coloured zones, shaped
   Laurence preset pre-loaded with 10 zones and 40 bookmarks.
 Hotkey: Ctrl+Alt+B  |  Tray icon  |  Auto-shows on idle (optional)
 """
-__version__ = "1.5.0"
+__version__ = "1.6.0"
 import selfclean; selfclean.ensure_single("windowbranch.py")
 
 import ctypes, json, math, os, random, sys, threading, time, webbrowser
@@ -570,36 +570,95 @@ class SettingsPanel:
         self._on_close()
 
 # ── Browser: open URL in a dedicated new window ───────────────────────────────
+import shutil as _shutil, winreg as _winreg
+
+def _find_browser_full_path(name_hint: str) -> str:
+    """Resolve a browser name/hint to a confirmed full .exe path."""
+    _common = {
+        "comet":   [os.path.expandvars(r"%LOCALAPPDATA%\Perplexity\Comet\Application\comet.exe")],
+        "chrome":  [
+            os.path.expandvars(r"%PROGRAMFILES%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%PROGRAMFILES(X86)%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+        ],
+        "msedge":  [
+            os.path.expandvars(r"%PROGRAMFILES(X86)%\Microsoft\Edge\Application\msedge.exe"),
+            os.path.expandvars(r"%PROGRAMFILES%\Microsoft\Edge\Application\msedge.exe"),
+        ],
+        "firefox": [
+            os.path.expandvars(r"%PROGRAMFILES%\Mozilla Firefox\firefox.exe"),
+            os.path.expandvars(r"%PROGRAMFILES(X86)%\Mozilla Firefox\firefox.exe"),
+        ],
+        "brave":   [
+            os.path.expandvars(r"%LOCALAPPDATA%\BraveSoftware\Brave-Browser\Application\brave.exe"),
+            os.path.expandvars(r"%PROGRAMFILES%\BraveSoftware\Brave-Browser\Application\brave.exe"),
+        ],
+        "opera":   [
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Opera\launcher.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Opera GX\launcher.exe"),
+        ],
+    }
+    key = name_hint.lower().replace(".exe","")
+    for k, paths in _common.items():
+        if k in key:
+            for p in paths:
+                if os.path.isfile(p):
+                    return p
+    # Last resort: look up the ProgId's open command in the registry
+    for root in (_winreg.HKEY_CURRENT_USER, _winreg.HKEY_LOCAL_MACHINE):
+        for cls_sub in (r"Software\Classes", r"Classes"):
+            try:
+                with _winreg.OpenKey(root,
+                        rf"{cls_sub}\{name_hint}\shell\open\command") as k:
+                    cmd = _winreg.QueryValue(k, None)
+                    # Extract exe path from e.g. '"C:\path\app.exe" --flag %1'
+                    import re as _re
+                    m = _re.match(r'"([^"]+\.exe)"', cmd)
+                    if m and os.path.isfile(m.group(1)):
+                        return m.group(1)
+            except: pass
+    found = _shutil.which(name_hint)
+    return found or name_hint
+
 def _detect_default_browser() -> tuple:
-    """Return (exe_name, new_window_flag) for the system default browser."""
-    import winreg
+    """Return (full_exe_path, new_window_flag) for the system default browser."""
+    prog = ""
     try:
-        with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
+        with _winreg.OpenKey(
+                _winreg.HKEY_CURRENT_USER,
                 r"Software\Microsoft\Windows\Shell\Associations"
                 r"\UrlAssociations\https\UserChoice") as k:
-            prog = winreg.QueryValueEx(k, "ProgId")[0].lower()
-    except:
-        prog = ""
-    if   "chrome"  in prog: return ("chrome.exe",  "--new-window")
-    elif "edge"    in prog or "msedge" in prog: return ("msedge.exe", "--new-window")
-    elif "firefox" in prog: return ("firefox.exe", "-new-window")
-    elif "brave"   in prog: return ("brave.exe",   "--new-window")
-    else:                   return ("",             "")
+            prog = _winreg.QueryValueEx(k, "ProgId")[0].lower()
+    except: pass
+    # Chromium family (all use --new-window)
+    if   "comet"   in prog: name, flag = "comet",   "--new-window"
+    elif "chrome"  in prog: name, flag = "chrome",  "--new-window"
+    elif "edge"    in prog or "msedge" in prog: name, flag = "msedge", "--new-window"
+    elif "brave"   in prog: name, flag = "brave",   "--new-window"
+    elif "opera"   in prog: name, flag = "opera",   "--new-window"
+    elif "firefox" in prog: name, flag = "firefox", "-new-window"
+    else:
+        # Unknown — extract exe from ProgId open command directly
+        exe = _find_browser_full_path(prog.split(".")[0])
+        return (exe, "--new-window")
+    return (_find_browser_full_path(name), flag)
 
 _BROWSER_EXE, _BROWSER_FLAG = _detect_default_browser()
 
 def open_in_new_window(url: str):
-    """Open URL in a dedicated new browser window (not a tab)."""
+    """Open URL in a dedicated new browser window (not a tab).
+    Uses the cmd 'start' verb so Windows handles the process correctly."""
     import subprocess
-    if _BROWSER_EXE:
-        try:
-            subprocess.Popen([_BROWSER_EXE, _BROWSER_FLAG, url],
-                             creationflags=0x8)   # DETACHED_PROCESS
-            return
-        except: pass
-    # fallback – at least try to request a new window
-    webbrowser.open_new(url)
+    exe  = _BROWSER_EXE
+    flag = _BROWSER_FLAG
+    if exe and os.path.isfile(exe):
+        # Use 'start' via cmd.exe — this is the most reliable way to get a
+        # new top-level window on Windows regardless of single-instance logic.
+        cmd = f'start "" "{exe}" {flag} "{url}"'
+        subprocess.Popen(cmd, shell=True)
+    else:
+        # Last-ditch: shell open + request new window
+        webbrowser.open_new(url)
 
 # ── Focus helper ──────────────────────────────────────────────────────────────
 def focus_node(node: WNode):
@@ -754,18 +813,36 @@ class BranchOverlay:
                  font=("Segoe UI", 7), fg=FG_DIM, bg=BG2).pack()
 
     def _launch_all_preset(self):
-        """Open every preset bookmark in its own separate browser window."""
+        """Open every preset bookmark in its own separate browser window, then cycle."""
         items = self._active_preset
         if not items: return
         self._launch_all_btn.config(text="⏳ Opening…", state="disabled", fg=YELLOW)
         n = len(items)
         def _done():
+            # 1. Update button
             try:
                 self._launch_all_btn.config(
-                    text=f"✓ {n} windows opened", fg=GREEN, state="normal")
+                    text=f"✓ {n} windows — cycling now", fg=GREEN, state="normal")
             except: pass
+            # 2. Rescan so new windows appear in the tree
             self._root.after(0, self._rescan)
+            # 3. Unpause oscillator if it was paused, restart cycling from node 0
+            self._root.after(200, self._restart_cycle)
         launch_preset_windows(items, on_done=_done, stagger_ms=350)
+
+    def _restart_cycle(self):
+        """Reset to node 0 and make sure oscillator is running."""
+        if self._bc:
+            self._bc._active = 0
+        if self._paused:
+            self._toggle_pause()   # unpause
+        elif not self._osc._running:
+            self._osc.start(lambda: self._root.after(0, self._advance))
+
+    def _launch_all_preset_done(self):
+        """Called by tray path after windows have been launched — rescan + cycle."""
+        self._rescan()
+        self._root.after(400, self._restart_cycle)
 
     def _clear_preset(self):
         """Remove preset nodes and hide the indicator bar."""
@@ -1655,18 +1732,19 @@ class BranchApp:
         self._state.update(self._osc.to_state())
 
     def _tray_launch_all(self):
-        """Launch all active preset items in separate windows (from tray, no overlay needed)."""
-        items = self._active_preset
-        if not items:
-            # Load laurence first then launch
+        """Launch all active preset items in separate windows, then open Branch + cycle."""
+        if not self._active_preset:
             self._load_and_activate_laurence()
-            self.root.after(500, self._tray_launch_all)
+            self.root.after(600, self._tray_launch_all)
             return
+        items = self._active_preset
         def _done():
-            self.root.after(0, lambda: (self._show() if not self._overlay else None,
-                                        self.root.after(500,
-                                            lambda: self._overlay._rescan()
-                                            if self._overlay else None)))
+            def _open_and_cycle():
+                if not self._overlay:
+                    self._show()
+                self.root.after(600, lambda: self._overlay._launch_all_preset_done()
+                                if self._overlay else None)
+            self.root.after(0, _open_and_cycle)
         launch_preset_windows(items, on_done=_done, stagger_ms=350)
 
     def _clear_tray_preset(self):
