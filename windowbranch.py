@@ -1,5 +1,5 @@
 """
-Lawrence: Move In — Branch v1.4.0
+Lawrence: Move In — Branch v1.5.0
 Full-screen branch overlay: scans all open windows + browser tabs.
 Draws a 2D pannable/zoomable radial tree with a human-heartbeat
 oscillator cycling through nodes. Click any node → jump there.
@@ -9,7 +9,7 @@ Playground: full-screen bookmark board with coloured zones, shaped
   Laurence preset pre-loaded with 10 zones and 40 bookmarks.
 Hotkey: Ctrl+Alt+B  |  Tray icon  |  Auto-shows on idle (optional)
 """
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 import selfclean; selfclean.ensure_single("windowbranch.py")
 
 import ctypes, json, math, os, random, sys, threading, time, webbrowser
@@ -569,6 +569,38 @@ class SettingsPanel:
         except: pass
         self._on_close()
 
+# ── Browser: open URL in a dedicated new window ───────────────────────────────
+def _detect_default_browser() -> tuple:
+    """Return (exe_name, new_window_flag) for the system default browser."""
+    import winreg
+    try:
+        with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\Shell\Associations"
+                r"\UrlAssociations\https\UserChoice") as k:
+            prog = winreg.QueryValueEx(k, "ProgId")[0].lower()
+    except:
+        prog = ""
+    if   "chrome"  in prog: return ("chrome.exe",  "--new-window")
+    elif "edge"    in prog or "msedge" in prog: return ("msedge.exe", "--new-window")
+    elif "firefox" in prog: return ("firefox.exe", "-new-window")
+    elif "brave"   in prog: return ("brave.exe",   "--new-window")
+    else:                   return ("",             "")
+
+_BROWSER_EXE, _BROWSER_FLAG = _detect_default_browser()
+
+def open_in_new_window(url: str):
+    """Open URL in a dedicated new browser window (not a tab)."""
+    import subprocess
+    if _BROWSER_EXE:
+        try:
+            subprocess.Popen([_BROWSER_EXE, _BROWSER_FLAG, url],
+                             creationflags=0x8)   # DETACHED_PROCESS
+            return
+        except: pass
+    # fallback – at least try to request a new window
+    webbrowser.open_new(url)
+
 # ── Focus helper ──────────────────────────────────────────────────────────────
 def focus_node(node: WNode):
     """Focus a real window. Does NOT open preset URLs (use activate_node for that)."""
@@ -595,10 +627,10 @@ def focus_node(node: WNode):
     threading.Thread(target=_go, daemon=True).start()
 
 def activate_node(node: WNode, on_opened=None):
-    """Activate a node: focus real window, or open preset URL in browser."""
+    """Activate a node: focus real window, or open preset URL in its own new window."""
     if node.preset_url:
         def _open():
-            webbrowser.open(node.preset_url)
+            open_in_new_window(node.preset_url)
             if on_opened:
                 time.sleep(2.5)
                 try: on_opened()
@@ -606,6 +638,22 @@ def activate_node(node: WNode, on_opened=None):
         threading.Thread(target=_open, daemon=True).start()
     else:
         focus_node(node)
+
+def launch_preset_windows(items: list, on_done=None, stagger_ms: int = 400):
+    """Open every preset item in its own new window, staggered to avoid race.
+    items: list of {title, url} dicts.  on_done called after all launched + settle."""
+    def _run():
+        for item in items:
+            url = item.get("url","")
+            if url:
+                open_in_new_window(url)
+                time.sleep(stagger_ms / 1000.0)
+        # Wait for windows to appear then trigger caller
+        time.sleep(2.0)
+        if on_done:
+            try: on_done()
+            except: pass
+    threading.Thread(target=_run, daemon=True).start()
 
 # ── Branch overlay window ─────────────────────────────────────────────────────
 class BranchOverlay:
@@ -680,9 +728,16 @@ class BranchOverlay:
         self._preset_count= tk.Label(self._preset_bar, text="",
                                       font=("Segoe UI", 7), fg=FG_DIM, bg="#1a1a2e")
         self._preset_count.pack(side="left", padx=4)
-        tk.Button(self._preset_bar, text="✕ clear preset", font=("Segoe UI", 7),
+        tk.Button(self._preset_bar, text="✕ clear", font=("Segoe UI", 7),
                   fg=FG_DIM, bg="#1a1a2e", relief="flat", padx=6, cursor="hand2",
-                  command=self._clear_preset).pack(side="right", padx=8)
+                  command=self._clear_preset).pack(side="right", padx=4)
+        self._launch_all_btn = tk.Button(
+            self._preset_bar, text="⊕ Open all in separate windows",
+            font=("Segoe UI", 8, "bold"), fg=PURPLE, bg="#1a1a2e",
+            activebackground="#2a1a4e", activeforeground=GREEN,
+            relief="flat", padx=10, cursor="hand2",
+            command=self._launch_all_preset)
+        self._launch_all_btn.pack(side="right", padx=8)
         if self._active_preset:
             self._preset_bar.pack(fill="x", after=bar)
 
@@ -697,6 +752,20 @@ class BranchOverlay:
                  text="Oscillator cycles windows live  ·  Click/Enter = jump or open  ·  "
                       "Preset nodes ⊕ open in browser on click  ·  Wiggle ← → ← → = note  ·  Esc = close",
                  font=("Segoe UI", 7), fg=FG_DIM, bg=BG2).pack()
+
+    def _launch_all_preset(self):
+        """Open every preset bookmark in its own separate browser window."""
+        items = self._active_preset
+        if not items: return
+        self._launch_all_btn.config(text="⏳ Opening…", state="disabled", fg=YELLOW)
+        n = len(items)
+        def _done():
+            try:
+                self._launch_all_btn.config(
+                    text=f"✓ {n} windows opened", fg=GREEN, state="normal")
+            except: pass
+            self._root.after(0, self._rescan)
+        launch_preset_windows(items, on_done=_done, stagger_ms=350)
 
     def _clear_preset(self):
         """Remove preset nodes and hide the indicator bar."""
@@ -1585,6 +1654,21 @@ class BranchApp:
         self._osc = Oscillator(self._state)   # fresh oscillator for next show
         self._state.update(self._osc.to_state())
 
+    def _tray_launch_all(self):
+        """Launch all active preset items in separate windows (from tray, no overlay needed)."""
+        items = self._active_preset
+        if not items:
+            # Load laurence first then launch
+            self._load_and_activate_laurence()
+            self.root.after(500, self._tray_launch_all)
+            return
+        def _done():
+            self.root.after(0, lambda: (self._show() if not self._overlay else None,
+                                        self.root.after(500,
+                                            lambda: self._overlay._rescan()
+                                            if self._overlay else None)))
+        launch_preset_windows(items, on_done=_done, stagger_ms=350)
+
     def _clear_tray_preset(self):
         self._active_preset      = []
         self._active_preset_name = ""
@@ -1703,8 +1787,10 @@ class BranchApp:
 
             # ── Presets ──────────────────────────────────────────────────
             pystray.MenuItem("Presets  ▸", pystray.Menu(
-                pystray.MenuItem("🗺  Laurence's Every Day  (activate in Branch)",
+                pystray.MenuItem("🗺  Laurence's Every Day  (load into Branch)",
                                  lambda: self._load_and_activate_laurence()),
+                pystray.MenuItem("⊕  Launch all as separate windows",
+                                 lambda: self._tray_launch_all()),
                 pystray.MenuItem("🎮  Edit in Playground",
                                  lambda: self.root.after(0, self._open_playground)),
                 pystray.MenuItem("✕  Clear active preset",
