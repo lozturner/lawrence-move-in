@@ -1,5 +1,5 @@
 """
-Lawrence: Move In — Branch v1.3.0
+Lawrence: Move In — Branch v1.4.0
 Full-screen branch overlay: scans all open windows + browser tabs.
 Draws a 2D pannable/zoomable radial tree with a human-heartbeat
 oscillator cycling through nodes. Click any node → jump there.
@@ -9,10 +9,10 @@ Playground: full-screen bookmark board with coloured zones, shaped
   Laurence preset pre-loaded with 10 zones and 40 bookmarks.
 Hotkey: Ctrl+Alt+B  |  Tray icon  |  Auto-shows on idle (optional)
 """
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 import selfclean; selfclean.ensure_single("windowbranch.py")
 
-import ctypes, json, math, os, random, sys, threading, time
+import ctypes, json, math, os, random, sys, threading, time, webbrowser
 import tkinter as tk
 from tkinter import ttk
 from dataclasses import dataclass, field
@@ -99,9 +99,11 @@ class WNode:
     tab_idx:  int  = -1
     uia_ref:  Any  = None
     parent_node: Optional['WNode'] = None
-    children: List['WNode'] = field(default_factory=list)
-    x: float = 0.0
-    y: float = 0.0
+    children:   List['WNode'] = field(default_factory=list)
+    x:          float = 0.0
+    y:          float = 0.0
+    preset_url: str   = ""      # non-empty → bookmark node, no real hwnd yet
+    zone_label: str   = ""      # zone name shown under preset nodes
 
 # ── Window scanning ───────────────────────────────────────────────────────────
 _SKIP_TITLES = {"Program Manager", "Default IME", "MSCTFIME UI", ""}
@@ -326,23 +328,46 @@ class BranchCanvas(tk.Canvas):
             hw = NW / 2 * self._sc
             hh = NH / 2 * self._sc
             is_active = (node is active_node)
+            is_preset = bool(node.preset_url)
 
-            # Glow rings
+            # Glow rings (active node)
             if is_active:
+                glow_col = PURPLE if is_preset else GLOW
                 for g in [12, 8, 4]:
                     self.create_rectangle(
                         x-hw-g, y-hh-g, x+hw+g, y+hh+g,
-                        fill="", outline=GLOW,
+                        fill="", outline=glow_col,
                         width=1, stipple="gray25")
 
             # Node box
-            fill    = node.color if is_active else BG2
-            outline = GLOW if is_active else node.color
-            lw      = 2 if is_active else 1
-            iid = self.create_rectangle(
-                x-hw, y-hh, x+hw, y+hh,
-                fill=fill, outline=outline, width=lw, tags="node")
-            self._items[iid] = node
+            if is_preset:
+                # Bookmark node: dashed outline, dim fill, pill shape (rounded ends)
+                fill    = (node.color + "44") if is_active else BG
+                outline = node.color if is_active else (node.color + "88")
+                lw      = 2 if is_active else 1
+                dash_   = () if is_active else (5, 3)
+                # Draw with rounded rectangle (polygon smooth)
+                r   = min(10, hh * 0.45)
+                pts = [x-hw+r, y-hh, x+hw-r, y-hh,
+                       x+hw, y-hh+r, x+hw, y+hh-r,
+                       x+hw-r, y+hh, x-hw+r, y+hh,
+                       x-hw, y+hh-r, x-hw, y-hh+r]
+                iid = self.create_polygon(*pts, smooth=True,
+                                          fill=fill, outline=outline,
+                                          width=lw, dash=dash_, tags="node")
+                self._items[iid] = node
+                # ⊕ open icon top-right
+                self.create_text(x + hw - 7, y - hh + 5,
+                                  text="⊕", fill=node.color,
+                                  font=("Segoe UI", 7), anchor="center")
+            else:
+                fill    = node.color if is_active else BG2
+                outline = GLOW if is_active else node.color
+                lw      = 2 if is_active else 1
+                iid = self.create_rectangle(
+                    x-hw, y-hh, x+hw, y+hh,
+                    fill=fill, outline=outline, width=lw, tags="node")
+                self._items[iid] = node
 
             # Tab indicator pill
             if node.is_tab:
@@ -352,16 +377,21 @@ class BranchCanvas(tk.Canvas):
             # Title
             chars = max(5, int(hw * 1.7 / 7))
             title = (node.title[:chars-1] + "…") if len(node.title) > chars else node.title
-            fg_t  = BG if is_active else FG
+            if is_active:
+                fg_t = BG if not is_preset else node.color
+            else:
+                fg_t = (node.color + "cc") if is_preset else FG
+            font_t = ("Segoe UI", 8, "bold") if (is_active or is_preset) else ("Segoe UI", 8)
             t1 = self.create_text(x, y - 6, text=title,
-                                  fill=fg_t, font=("Segoe UI", 8, "bold"),
+                                  fill=fg_t, font=font_t,
                                   width=hw * 1.8, anchor="center", tags="node")
             self._items[t1] = node
 
-            # Exe
+            # Sub-label: exe for real nodes, zone for preset nodes
+            sub = node.zone_label if is_preset else node.exe.replace(".exe","")[:18]
             t2 = self.create_text(x, y + 10,
-                                  text=node.exe.replace(".exe","")[:18],
-                                  fill=(BG if is_active else FG_DIM),
+                                  text=sub,
+                                  fill=(BG if (is_active and not is_preset) else FG_DIM),
                                   font=("Segoe UI", 7),
                                   anchor="center", tags="node")
             self._items[t2] = node
@@ -541,6 +571,8 @@ class SettingsPanel:
 
 # ── Focus helper ──────────────────────────────────────────────────────────────
 def focus_node(node: WNode):
+    """Focus a real window. Does NOT open preset URLs (use activate_node for that)."""
+    if node.preset_url: return
     def _go():
         try:
             hwnd = node.hwnd
@@ -548,14 +580,12 @@ def focus_node(node: WNode):
             if win32gui.IsIconic(hwnd):
                 win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
             win32gui.SetForegroundWindow(hwnd)
-
             if node.is_tab:
                 time.sleep(0.15)
                 if node.uia_ref:
                     try: node.uia_ref.Click()
                     except: pass
                 elif node.tab_idx >= 0:
-                    # Ctrl+1..9 fallback for first 9 tabs
                     if node.tab_idx < 8:
                         win32api.keybd_event(0x11, 0, 0, 0)
                         win32api.keybd_event(0x31 + node.tab_idx, 0, 0, 0)
@@ -564,9 +594,23 @@ def focus_node(node: WNode):
         except: pass
     threading.Thread(target=_go, daemon=True).start()
 
+def activate_node(node: WNode, on_opened=None):
+    """Activate a node: focus real window, or open preset URL in browser."""
+    if node.preset_url:
+        def _open():
+            webbrowser.open(node.preset_url)
+            if on_opened:
+                time.sleep(2.5)
+                try: on_opened()
+                except: pass
+        threading.Thread(target=_open, daemon=True).start()
+    else:
+        focus_node(node)
+
 # ── Branch overlay window ─────────────────────────────────────────────────────
 class BranchOverlay:
-    def __init__(self, root: tk.Tk, osc: Oscillator, state: dict, on_close):
+    def __init__(self, root: tk.Tk, osc: Oscillator, state: dict, on_close,
+                 active_preset: list = None):
         self._root     = root
         self._osc      = osc
         self._state    = state
@@ -575,6 +619,7 @@ class BranchOverlay:
         self._zones_open    = False
         self._nodes: List[WNode] = []
         self._bc: Optional[BranchCanvas] = None
+        self._active_preset: list = active_preset or []   # list of {title,url,color,zone_label}
 
         self.win = tk.Toplevel(root)
         self.win.configure(bg=BG)
@@ -626,6 +671,21 @@ class BranchOverlay:
                                   command=self._toggle_pause)
         self._pp_btn.pack(side="right", padx=1)
 
+        # Preset indicator bar (shown only when a preset is active)
+        self._preset_bar  = tk.Frame(self.win, bg="#1a1a2e", pady=2)
+        self._preset_name = tk.Label(self._preset_bar, text="",
+                                      font=("Segoe UI", 8, "bold"),
+                                      fg=PURPLE, bg="#1a1a2e")
+        self._preset_name.pack(side="left", padx=12)
+        self._preset_count= tk.Label(self._preset_bar, text="",
+                                      font=("Segoe UI", 7), fg=FG_DIM, bg="#1a1a2e")
+        self._preset_count.pack(side="left", padx=4)
+        tk.Button(self._preset_bar, text="✕ clear preset", font=("Segoe UI", 7),
+                  fg=FG_DIM, bg="#1a1a2e", relief="flat", padx=6, cursor="hand2",
+                  command=self._clear_preset).pack(side="right", padx=8)
+        if self._active_preset:
+            self._preset_bar.pack(fill="x", after=bar)
+
         # Canvas area (filled between bar and hint)
         self._canvas_host = tk.Frame(self.win, bg=BG)
         self._canvas_host.pack(fill="both", expand=True)
@@ -634,9 +694,16 @@ class BranchOverlay:
         hint = tk.Frame(self.win, bg=BG2, pady=3)
         hint.pack(fill="x", side="bottom")
         tk.Label(hint,
-                 text="Oscillator cycles + focuses each window/tab live  ·  Click node → jump  ·  "
-                      "Wiggle mouse ← → ← → to add a note  ·  Enter = go to active  ·  Esc = close",
+                 text="Oscillator cycles windows live  ·  Click/Enter = jump or open  ·  "
+                      "Preset nodes ⊕ open in browser on click  ·  Wiggle ← → ← → = note  ·  Esc = close",
                  font=("Segoe UI", 7), fg=FG_DIM, bg=BG2).pack()
+
+    def _clear_preset(self):
+        """Remove preset nodes and hide the indicator bar."""
+        self._active_preset = []
+        try: self._preset_bar.pack_forget()
+        except: pass
+        self._rescan()
 
     def _toggle_pause(self):
         self._paused = not self._paused
@@ -702,6 +769,34 @@ class BranchOverlay:
             nodes = scan_windows()
             sw    = self.win.winfo_screenwidth()
             sh    = self.win.winfo_screenheight()
+
+            # Merge preset bookmarks: only add those not already open
+            preset = self._active_preset
+            if preset:
+                from urllib.parse import urlparse
+                open_domains = set()
+                for n in flatten(nodes):
+                    # Collect domains from tab titles (browser tabs include domain in title)
+                    t = n.title.lower()
+                    for seg in t.replace("—"," ").replace("-"," ").replace("|"," ").split():
+                        if "." in seg: open_domains.add(seg.strip("."))
+                for item in preset:
+                    url = item.get("url","")
+                    if not url: continue
+                    try:
+                        domain = urlparse(url).netloc.lower().replace("www.","")
+                        domain_key = domain.split(".")[0]  # e.g. "nationwide"
+                    except: continue
+                    # Skip if that domain appears to already be open
+                    already = any(domain_key in d for d in open_domains)
+                    if not already:
+                        pn = WNode(
+                            hwnd=0, title=item["title"], exe="bookmark",
+                            color=item.get("color", PURPLE),
+                            preset_url=url,
+                            zone_label=item.get("zone_label",""))
+                        nodes.append(pn)
+
             layout_radial(nodes, sw / 2, sh / 2)
             self._root.after(0, lambda: self._apply(nodes))
 
@@ -709,12 +804,26 @@ class BranchOverlay:
 
     def _apply(self, nodes: List[WNode]):
         self._nodes = nodes
-        flat  = flatten(nodes)
-        tabs  = sum(len(n.children) for n in nodes)
-        total = len(flat)
-        self._status_lbl.config(
-            text=f"{len(nodes)} windows · {tabs} tabs · {total} nodes",
-            fg=FG_DIM)
+        flat     = flatten(nodes)
+        real_win = [n for n in flat if not n.preset_url and not n.is_tab]
+        real_tab = [n for n in flat if not n.preset_url and n.is_tab]
+        presets  = [n for n in flat if n.preset_url]
+        parts    = [f"{len(real_win)} windows", f"{len(real_tab)} tabs"]
+        if presets:
+            parts.append(f"{len(presets)} preset")
+        self._status_lbl.config(text="  ·  ".join(parts), fg=FG_DIM)
+
+        # Update preset indicator
+        if self._active_preset:
+            try:
+                name = getattr(self, '_preset_name_str', "Preset")
+                self._preset_name.config(text=f"🗺 {name}")
+                opened = len(self._active_preset) - len(presets)
+                self._preset_count.config(
+                    text=f"{opened}/{len(self._active_preset)} open  ·  "
+                         f"{len(presets)} waiting — click to open",
+                    fg=GREEN if opened == len(self._active_preset) else FG_DIM)
+            except: pass
 
         if self._bc:
             self._bc.destroy()
@@ -726,19 +835,25 @@ class BranchOverlay:
         if not self._bc: return
         self._bc.set_active(self._bc._active + 1)
         node = self._bc.get_active_node()
-        if node:
-            focus_node(node)   # actually bring the window/tab forward as we cycle
+        if node and not node.preset_url:
+            focus_node(node)   # oscillator only cycles real windows — preset nodes just highlight
 
     def _go_active(self):
         if self._bc:
             node = self._bc.get_active_node()
             if node:
-                self._close()
-                focus_node(node)
+                if node.preset_url:
+                    activate_node(node, on_opened=lambda: self._root.after(0, self._rescan))
+                else:
+                    self._close()
+                    activate_node(node)
 
     def _select(self, node: WNode):
-        self._close()
-        focus_node(node)
+        if node.preset_url:
+            activate_node(node, on_opened=lambda: self._root.after(0, self._rescan))
+        else:
+            self._close()
+            activate_node(node)
 
     def _note_popup(self, node: WNode):
         """Small note popup for the currently highlighted window/tab."""
@@ -1400,8 +1515,10 @@ class BranchApp:
         self.root.withdraw()
         self._state    = _load_state()
         self._osc      = Oscillator(self._state)
-        self._overlay: Optional[BranchOverlay] = None
-        self._tray_icon = None
+        self._overlay:    Optional[BranchOverlay] = None
+        self._tray_icon   = None
+        self._active_preset:     list = []   # [{title,url,color,zone_label}]
+        self._active_preset_name: str = ""
 
         # Global hotkey
         try:
@@ -1421,12 +1538,58 @@ class BranchApp:
         if self._overlay: return
         self._overlay = BranchOverlay(
             self.root, self._osc, self._state,
-            on_close=self._overlay_closed)
+            on_close=self._overlay_closed,
+            active_preset=list(self._active_preset))
+        if self._active_preset_name:
+            self._overlay._preset_name_str = self._active_preset_name
+
+    def _activate_preset_zones(self, zones: list, name: str = "Preset"):
+        """Flatten preset zones into bookmark list and push to overlay."""
+        items = []
+        for zone in zones:
+            col = zone.get("color", ZONE_COLORS.get(zone.get("id",""), PURPLE))
+            zone_title = zone.get("title","")
+            for nd in zone.get("nodes", []):
+                items.append({
+                    "title":      nd.get("title",""),
+                    "url":        nd.get("url",""),
+                    "color":      nd.get("color", col),
+                    "zone_label": zone_title,
+                })
+        self._active_preset      = items
+        self._active_preset_name = name
+        if self._overlay:
+            self._overlay._active_preset      = list(items)
+            self._overlay._preset_name_str    = name
+            try: self._overlay._preset_bar.pack(fill="x")
+            except: pass
+            self._overlay._rescan()
+
+    def _load_and_activate_laurence(self):
+        """Load Laurence preset — from edited playground file if it exists, else default."""
+        data = _copy.deepcopy(LAURENCE_PRESET)
+        if PLAYGROUND_FILE.exists():
+            try:
+                with open(PLAYGROUND_FILE,"r",encoding="utf-8") as f:
+                    saved = json.load(f)
+                if saved.get("zones"): data = saved
+            except: pass
+        def _do():
+            self._activate_preset_zones(data.get("zones",[]), data.get("name","Laurence's Every Day"))
+            if not self._overlay:
+                self._show()
+        self.root.after(0, _do)
 
     def _overlay_closed(self):
         self._overlay = None
         self._osc = Oscillator(self._state)   # fresh oscillator for next show
         self._state.update(self._osc.to_state())
+
+    def _clear_tray_preset(self):
+        self._active_preset      = []
+        self._active_preset_name = ""
+        if self._overlay:
+            self._overlay._clear_preset()
 
     def _idle_check(self):
         idle_mins = self._state.get("auto_idle_minutes", 0)
@@ -1538,12 +1701,14 @@ class BranchApp:
                 pystray.MenuItem("Full         (95%)",  _af(0.95, "95%")),
             )),
 
-            # ── Playground ───────────────────────────────────────────────
-            pystray.MenuItem("Playground  ▸", pystray.Menu(
-                pystray.MenuItem("🎮  Open Playground",
+            # ── Presets ──────────────────────────────────────────────────
+            pystray.MenuItem("Presets  ▸", pystray.Menu(
+                pystray.MenuItem("🗺  Laurence's Every Day  (activate in Branch)",
+                                 lambda: self._load_and_activate_laurence()),
+                pystray.MenuItem("🎮  Edit in Playground",
                                  lambda: self.root.after(0, self._open_playground)),
-                pystray.MenuItem("🗺  Load Laurence Preset",
-                                 lambda: self.root.after(0, self._load_laurence_preset)),
+                pystray.MenuItem("✕  Clear active preset",
+                                 lambda: self.root.after(0, self._clear_tray_preset)),
             )),
             pystray.Menu.SEPARATOR,
 
