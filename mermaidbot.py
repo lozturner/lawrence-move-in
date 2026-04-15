@@ -4,7 +4,7 @@ Natural-language Mermaid diagram generator. Type anything, get a diagram.
 Uses the claude CLI (Max subscription) by default — no API key needed.
 Falls back to direct API key if the CLI is not available.
 """
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 import selfclean; selfclean.ensure_single("mermaidbot.py")
 
 import json, os, re, subprocess, threading, tkinter as tk
@@ -234,26 +234,46 @@ def view_diagram_in_browser(mermaid_code: str):
 
 # ── CLI bridge detection ───────────────────────────────────────────────────────
 _CLI_AVAILABLE: bool | None = None   # cached after first check
+_CLI_PATH: str = ""                  # full path once found
 
-def _check_cli() -> bool:
-    """Return True if the `claude` CLI is on PATH and authenticated."""
-    global _CLI_AVAILABLE
-    if _CLI_AVAILABLE is not None:
-        return _CLI_AVAILABLE
+def _find_claude_exe() -> str:
+    """Return full path to the claude CLI, or '' if not found."""
+    import glob as _glob
+    # 1. Try plain 'claude' on PATH first
     try:
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        r = subprocess.run(
-            ["claude", "--version"],
-            capture_output=True, text=True, timeout=6,
-            creationflags=flags,
-        )
-        _CLI_AVAILABLE = (r.returncode == 0)
+        r = subprocess.run(["claude", "--version"], capture_output=True,
+                           text=True, timeout=5, creationflags=flags)
+        if r.returncode == 0:
+            return "claude"
     except Exception:
+        pass
+    # 2. Known install location: %APPDATA%\Claude\claude-code\*\claude.exe
+    base = os.path.join(os.environ.get("APPDATA", ""), "Claude", "claude-code")
+    if os.path.isdir(base):
+        hits = sorted(_glob.glob(os.path.join(base, "*", "claude.exe")), reverse=True)
+        if hits:
+            return hits[0]   # newest version first
+    # 3. Give up
+    return ""
+
+def _check_cli() -> bool:
+    """Return True if the claude CLI is available (uses Max subscription)."""
+    global _CLI_AVAILABLE, _CLI_PATH
+    if _CLI_AVAILABLE is not None:
+        return _CLI_AVAILABLE
+    _CLI_PATH = _find_claude_exe()
+    if _CLI_PATH:
+        try:
+            flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            r = subprocess.run([_CLI_PATH, "--version"], capture_output=True,
+                               text=True, timeout=6, creationflags=flags)
+            _CLI_AVAILABLE = (r.returncode == 0)
+        except Exception:
+            _CLI_AVAILABLE = False
+    else:
         _CLI_AVAILABLE = False
     return _CLI_AVAILABLE
-
-def _mode_label() -> str:
-    return "via Claude Code" if _check_cli() else "via API key"
 
 # ── CLI path: uses Max subscription, no separate API key ──────────────────────
 def _call_via_cli(prompt: str, callback):
@@ -266,8 +286,9 @@ def _call_via_cli(prompt: str, callback):
                 f"Reply with ONLY the raw Mermaid code. No fences, no explanation."
             )
             flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            exe = _CLI_PATH or "claude"
             r = subprocess.run(
-                ["claude", "-p", full],
+                [exe, "-p", full],
                 capture_output=True, text=True, timeout=60,
                 creationflags=flags,
             )
