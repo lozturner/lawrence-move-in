@@ -4,7 +4,7 @@ Natural-language Mermaid diagram generator. Type anything, get a diagram.
 Uses the claude CLI (Max subscription) by default — no API key needed.
 Falls back to direct API key if the CLI is not available.
 """
-__version__ = "1.7.0"
+__version__ = "1.8.0"
 import selfclean; selfclean.ensure_single("mermaidbot.py")
 
 import base64, io, json, os, re, subprocess, threading, tkinter as tk
@@ -408,116 +408,563 @@ def show_api_key_dialog(parent, on_save):
     entry.bind("<Return>", lambda e: _save())
     entry.bind("<Escape>", lambda e: _cancel())
 
-# ── Floating diagram popup ─────────────────────────────────────────────────────
+# ── Chromium app-mode launcher ────────────────────────────────────────────────
+_CHROMIUM_EXE = ""
+
+def _find_chromium_for_app() -> str:
+    local = os.environ.get("LOCALAPPDATA", "")
+    for p in [
+        os.path.join(local, "Perplexity", "Comet", "Application", "comet.exe"),
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        os.path.join(local, "Google", "Chrome", "Application", "chrome.exe"),
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        os.path.join(local, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+    ]:
+        if os.path.isfile(p):
+            return p
+    return ""
+
+def _get_chromium() -> str:
+    global _CHROMIUM_EXE
+    if not _CHROMIUM_EXE:
+        _CHROMIUM_EXE = _find_chromium_for_app()
+    return _CHROMIUM_EXE
+
+# ── Diagram HTML generator ────────────────────────────────────────────────────
+def _make_diagram_html(mermaid_code: str) -> str:
+    # Escape for JS template literal
+    js_code = (mermaid_code
+               .replace("\\", "\\\\")
+               .replace("`", "\\`")
+               .replace("$", "\\$"))
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MermaidBot v{__version__} — Diagram</title>
+<style>
+*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+:root{{
+  --bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--bg4:#30363d;
+  --fg:#e6edf3;--dim:#6e7681;--dim2:#484f58;
+  --blue:#79c0ff;--green:#7ee787;--yellow:#e3b341;
+  --red:#ff7b72;--teal:#76e3ea;--purple:#d2a8ff;
+}}
+html,body{{height:100%;overflow:hidden;background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px}}
+
+/* ── Toolbar ── */
+#toolbar{{
+  -webkit-app-region:drag;
+  height:40px;background:var(--bg2);
+  border-bottom:1px solid var(--bg3);
+  display:flex;align-items:center;gap:4px;padding:0 8px;
+  user-select:none;z-index:100;position:relative;
+}}
+#toolbar *{{-webkit-app-region:no-drag}}
+.tb-brand{{color:var(--teal);font-weight:700;font-size:13px;letter-spacing:.04em}}
+.tb-ver{{color:var(--dim2);font-size:10px;margin-right:2px}}
+.sep{{width:1px;height:22px;background:var(--bg3);margin:0 4px;flex-shrink:0}}
+.tb-spacer{{flex:1;-webkit-app-region:drag}}
+
+/* buttons */
+.btn{{
+  background:none;border:none;color:var(--dim);cursor:pointer;
+  padding:3px 7px;border-radius:5px;font-size:12px;line-height:1;
+  transition:color .12s,background .12s;white-space:nowrap;
+}}
+.btn:hover{{color:var(--fg);background:var(--bg3)}}
+.btn.active{{color:var(--blue)}}
+.btn.danger:hover{{color:var(--red);background:#2d1117}}
+.btn.ok:hover{{color:var(--green)}}
+.btn.warn:hover{{color:var(--yellow)}}
+select.tb-sel{{
+  background:var(--bg3);color:var(--fg);border:1px solid var(--bg4);
+  border-radius:5px;padding:2px 6px;font-size:11px;cursor:pointer;
+  outline:none;
+}}
+select.tb-sel:hover{{border-color:var(--blue)}}
+#anim-ctr{{color:var(--dim2);font-size:10px;min-width:36px;text-align:center}}
+
+/* ── Diagram area ── */
+#diagram-area{{
+  width:100%;height:calc(100vh - 62px);overflow:hidden;
+  position:relative;background:var(--bg);
+}}
+#pz-wrap{{
+  width:100%;height:100%;
+  display:flex;align-items:center;justify-content:center;
+  cursor:grab;
+}}
+#pz-wrap:active{{cursor:grabbing}}
+#pz-inner{{transform-origin:0 0;will-change:transform}}
+
+/* mermaid SVG overrides */
+.mermaid svg{{max-width:none!important;font-family:inherit}}
+.mermaid .node rect,.mermaid .node circle,.mermaid .node polygon,
+.mermaid .node ellipse,.mermaid .node path{{cursor:pointer}}
+.mm-node-hover rect,.mm-node-hover circle,.mm-node-hover polygon{{
+  filter:brightness(1.35);
+}}
+
+/* ── Animations ── */
+.mm-anim-hidden{{opacity:0;transition:opacity .45s ease}}
+.mm-anim-visible{{opacity:1;transition:opacity .45s ease}}
+
+@keyframes mm-pulse{{
+  0%,100%{{filter:drop-shadow(0 0 3px var(--blue)) drop-shadow(0 0 0px transparent)}}
+  50%{{filter:drop-shadow(0 0 10px var(--blue)) drop-shadow(0 0 18px #79c0ff55)}}
+}}
+.mm-key-node{{animation:mm-pulse 1.8s ease-in-out infinite}}
+
+@keyframes mm-outline-pulse{{
+  0%,100%{{stroke:var(--blue);stroke-width:2;opacity:.9}}
+  50%{{stroke:var(--blue);stroke-width:5;opacity:.5}}
+}}
+
+/* ── Status bar ── */
+#statusbar{{
+  position:fixed;bottom:0;left:0;right:0;height:22px;
+  background:var(--bg2);border-top:1px solid var(--bg3);
+  display:flex;align-items:center;padding:0 10px;gap:16px;
+  font-size:10px;color:var(--dim2);z-index:100;
+}}
+#sb-status{{color:var(--dim)}}
+#sb-hint{{margin-left:auto;color:var(--dim2)}}
+
+/* ── Node tooltip ── */
+#tooltip{{
+  position:fixed;bottom:26px;left:10px;
+  background:var(--bg3);border:1px solid var(--bg4);
+  border-radius:6px;padding:4px 10px;font-size:11px;
+  color:var(--teal);pointer-events:none;
+  opacity:0;transition:opacity .15s;z-index:200;
+}}
+#tooltip.show{{opacity:1}}
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <span class="tb-brand">MM</span>
+  <span class="tb-ver">v{__version__}</span>
+  <div class="sep"></div>
+
+  <select class="tb-sel" id="font-sel" title="Font" onchange="changeFont(this.value)">
+    <option value="'Segoe UI',system-ui">Segoe UI</option>
+    <option value="Consolas,monospace">Consolas</option>
+    <option value="Georgia,serif">Georgia</option>
+    <option value="'Arial',sans-serif">Arial</option>
+    <option value="'Trebuchet MS',sans-serif">Trebuchet</option>
+  </select>
+
+  <select class="tb-sel" id="theme-sel" title="Theme" onchange="changeTheme(this.value)">
+    <option value="dark">Dark</option>
+    <option value="default">Light</option>
+    <option value="forest">Forest</option>
+    <option value="neutral">Neutral</option>
+    <option value="base">Base</option>
+  </select>
+
+  <div class="sep"></div>
+
+  <button class="btn" title="First"       onclick="animFirst()">⏮</button>
+  <button class="btn" title="Step back"   onclick="animBack()">⏪</button>
+  <button class="btn" id="btn-play" title="Play / Pause" onclick="animToggle()">▶</button>
+  <button class="btn" title="Step fwd"    onclick="animFwd()">⏩</button>
+  <button class="btn" title="Last"        onclick="animLast()">⏭</button>
+  <button class="btn" id="btn-loop" title="Loop" onclick="toggleLoop()">🔁</button>
+  <button class="btn" title="Replay"      onclick="animReplay()">↺</button>
+  <span id="anim-ctr">—/—</span>
+
+  <div class="sep"></div>
+
+  <button class="btn ok"   title="Save PNG"      onclick="savePng()">💾 PNG</button>
+  <button class="btn"      title="Copy SVG+JS"   onclick="copySvgJs()">⟨/⟩ SVG</button>
+  <button class="btn"      title="Copy code"     onclick="copyCode()">📋 Code</button>
+
+  <div class="tb-spacer"></div>
+
+  <button class="btn warn" title="Minimise" onclick="window.close()">−</button>
+  <button class="btn ok"   id="btn-max" title="Maximise" onclick="toggleMax()">□</button>
+  <button class="btn danger" title="Close" onclick="window.close()">×</button>
+</div>
+
+<div id="diagram-area">
+  <div id="pz-wrap">
+    <div id="pz-inner">
+      <div class="mermaid" id="mm-root"></div>
+    </div>
+  </div>
+</div>
+
+<div id="statusbar">
+  <span id="sb-status">Rendering…</span>
+  <span id="sb-hint">Scroll = zoom · Drag = pan · Dbl-click = reset · Click node = info</span>
+</div>
+<div id="tooltip"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════════════════
+//  MermaidBot Diagram Player  v{__version__}
+//  Namespace: mmDiagram  |  All nodes: data-mm-node-id, .mm-node
+// ════════════════════════════════════════════════════════════════════════
+const MM_VERSION  = "{__version__}";
+const MM_NS       = "mmDiagram";
+const MM_SOURCE   = `{js_code}`;
+
+// ── Export data object (populated after render) ───────────────────────
+const mmDiagram = {{
+  version : MM_VERSION,
+  ns      : MM_NS,
+  source  : MM_SOURCE,
+  nodes   : [],
+  edges   : [],
+  get svg(){{ return document.querySelector('#mm-root svg')?.outerHTML || '' }},
+}};
+
+// ── Mermaid init ──────────────────────────────────────────────────────
+let _theme = 'dark';
+let _font  = "'Segoe UI',system-ui";
+
+function mmConfig(theme){{
+  return {{
+    startOnLoad: false, theme,
+    themeVariables:{{
+      background:'#0d1117', primaryColor:'#21262d',
+      primaryTextColor:'#e6edf3', primaryBorderColor:'#79c0ff',
+      lineColor:'#76e3ea', secondaryColor:'#161b22',
+      tertiaryColor:'#161b22', edgeLabelBackground:'#21262d',
+      fontFamily:_font, fontSize:'14px',
+    }},
+    securityLevel:'loose',
+    flowchart:{{ curve:'basis', useMaxWidth:false }},
+  }};
+}}
+
+async function renderDiagram(theme){{
+  _theme = theme || _theme;
+  mermaid.initialize(mmConfig(_theme));
+  const el = document.getElementById('mm-root');
+  el.innerHTML = '';
+  try{{
+    const uid = MM_NS + '_' + Date.now();
+    const {{svg}} = await mermaid.render(uid, MM_SOURCE);
+    el.innerHTML = svg;
+    postProcess(el);
+    buildAnimSeq();
+    showAll();  // start fully visible; animation is opt-in
+    status('Ready  ·  v{__version__}');
+  }} catch(e){{
+    el.innerHTML = `<div style="color:#ff7b72;padding:24px;font-family:monospace">
+      ⚠ Render error:<br><pre>${{e.message}}</pre></div>`;
+    status('Render error — check code', true);
+  }}
+}}
+
+// ── SVG post-processing ───────────────────────────────────────────────
+function postProcess(container){{
+  const svg = container.querySelector('svg');
+  if(!svg) return;
+  svg.setAttribute('data-mm-ns', MM_NS);
+  svg.removeAttribute('height'); // let CSS size it
+
+  // Nodes
+  const nodes = [...svg.querySelectorAll('.node')];
+  nodes.forEach((n,i)=>{{
+    const nid = MM_NS+'_node_'+i;
+    n.classList.add('mm-node');
+    n.setAttribute('data-mm-node-id', nid);
+    n.setAttribute('data-mm-index', i);
+    n.style.cursor = 'pointer';
+    const label = (n.querySelector('.label,text,.nodeLabel')
+                    ||n).textContent.trim().replace(/\\s+/g,' ');
+    mmDiagram.nodes.push({{id:nid, index:i, label}});
+    n.addEventListener('click',   ()=> onNodeClick(n, i));
+    n.addEventListener('mouseenter',()=> onNodeHover(n,true));
+    n.addEventListener('mouseleave',()=> onNodeHover(n,false));
+  }});
+
+  // Edges
+  const edges = [...svg.querySelectorAll('.edgePath,.edge')];
+  edges.forEach((e,i)=>{{
+    const eid = MM_NS+'_edge_'+i;
+    e.classList.add('mm-edge');
+    e.setAttribute('data-mm-edge-id', eid);
+    mmDiagram.edges.push({{id:eid, index:i}});
+  }});
+
+  // Mark terminal node (key node) — last node with no outgoing SVG arrow
+  markKeyNode(nodes);
+}}
+
+function markKeyNode(nodes){{
+  if(!nodes.length) return;
+  // Parse source to find which node IDs have no outgoing edges
+  const src = MM_SOURCE;
+  const outgoing = new Set();
+  const allIds   = new Set();
+  src.split('\\n').forEach(line=>{{
+    const m = line.match(/([\\w]+)(?:\\[[^\\]]*\\]|\\([^)]*\\))?\\s*-+>+(?:\\|[^|]*\\|)?\\s*([\\w]+)/);
+    if(m){{ outgoing.add(m[1]); allIds.add(m[1]); allIds.add(m[2]); }}
+  }});
+  const terminals = [...allIds].filter(id=>!outgoing.has(id));
+  // Find matching SVG node
+  let keyNode = nodes[nodes.length-1]; // fallback: last node
+  if(terminals.length){{
+    for(const n of [...nodes].reverse()){{
+      const lbl = (n.querySelector('.label,text,.nodeLabel')||n).textContent.trim().toLowerCase();
+      if(terminals.some(t=>lbl.includes(t.toLowerCase()))){{ keyNode=n; break; }}
+    }}
+  }}
+  keyNode.classList.add('mm-key-node');
+  keyNode.setAttribute('data-mm-key','true');
+  const rect = keyNode.querySelector('rect,circle,polygon,ellipse');
+  if(rect){{
+    rect.style.animation='mm-outline-pulse 1.8s ease-in-out infinite';
+  }}
+}}
+
+// ── Node interaction ──────────────────────────────────────────────────
+function onNodeClick(node, i){{
+  const info = mmDiagram.nodes[i] || {{}};
+  tooltip(`Node ${{i+1}}: ${{info.label||'?'}}`);
+  status(`Clicked: ${{info.label||'node '+i}}`);
+}}
+function onNodeHover(node, enter){{
+  node.style.filter = enter ? 'brightness(1.3)' : '';
+}}
+function tooltip(msg){{
+  const t = document.getElementById('tooltip');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(()=>t.classList.remove('show'), 3000);
+}}
+
+// ── Animation ─────────────────────────────────────────────────────────
+let _seq = [];          // interleaved [node, edge, node, edge …]
+let _step = -1;
+let _playing = false;
+let _loop = false;
+let _timer = null;
+const STEP_MS = 550;
+
+function buildAnimSeq(){{
+  const svg = document.querySelector('#mm-root svg');
+  if(!svg) return;
+  const nodes = [...svg.querySelectorAll('.mm-node')];
+  const edges = [...svg.querySelectorAll('.mm-edge')];
+  _seq = [];
+  const max = Math.max(nodes.length, edges.length);
+  for(let i=0;i<max;i++){{
+    if(nodes[i]) _seq.push(nodes[i]);
+    if(edges[i]) _seq.push(edges[i]);
+  }}
+  _step = _seq.length-1;
+  // all visible to start
+  _seq.forEach(el=>{{ el.classList.remove('mm-anim-hidden'); el.classList.add('mm-anim-visible'); }});
+  stepDisplay();
+}}
+
+function applyStep(n){{
+  _seq.forEach((el,i)=>{{
+    if(i<=n){{ el.classList.remove('mm-anim-hidden'); el.classList.add('mm-anim-visible'); }}
+    else{{     el.classList.remove('mm-anim-visible'); el.classList.add('mm-anim-hidden'); }}
+  }});
+  _step=n; stepDisplay();
+}}
+function showAll(){{
+  _seq.forEach(el=>{{ el.classList.remove('mm-anim-hidden'); el.classList.add('mm-anim-visible'); }});
+  _step=_seq.length-1; stepDisplay();
+}}
+function hideAll(){{
+  _seq.forEach(el=>{{ el.classList.remove('mm-anim-visible'); el.classList.add('mm-anim-hidden'); }});
+  _step=-1; stepDisplay();
+}}
+function stepDisplay(){{
+  document.getElementById('anim-ctr').textContent =
+    _seq.length ? `${{Math.max(0,_step+1)}}/${{_seq.length}}` : '—/—';
+}}
+function animFirst(){{ stopPlay(); hideAll(); }}
+function animBack() {{ stopPlay(); if(_step>-1) applyStep(_step-1); }}
+function animFwd()  {{ stopPlay(); if(_step<_seq.length-1) applyStep(_step+1); }}
+function animLast() {{ stopPlay(); showAll(); }}
+function animReplay(){{ stopPlay(); hideAll(); setTimeout(startPlay,80); }}
+function toggleLoop(){{
+  _loop=!_loop;
+  document.getElementById('btn-loop').classList.toggle('active',_loop);
+}}
+function animToggle(){{ _playing ? stopPlay() : startPlay(); }}
+function startPlay(){{
+  if(_step>=_seq.length-1){{ hideAll(); }}
+  _playing=true;
+  document.getElementById('btn-play').textContent='⏸';
+  document.getElementById('btn-play').classList.add('active');
+  _timer=setInterval(()=>{{
+    if(_step<_seq.length-1){{ applyStep(_step+1); }}
+    else if(_loop){{ hideAll(); }}
+    else{{ stopPlay(); }}
+  }},STEP_MS);
+}}
+function stopPlay(){{
+  _playing=false;
+  document.getElementById('btn-play').textContent='▶';
+  document.getElementById('btn-play').classList.remove('active');
+  if(_timer){{ clearInterval(_timer); _timer=null; }}
+}}
+
+// ── Pan / Zoom ────────────────────────────────────────────────────────
+let _scale=1, _px=0, _py=0, _dragging=false, _lx=0, _ly=0;
+
+function applyXform(){{
+  document.getElementById('pz-inner').style.transform=
+    `translate(${{_px}}px,${{_py}}px) scale(${{_scale}})`;
+}}
+function initPanZoom(){{
+  const wrap = document.getElementById('pz-wrap');
+  wrap.addEventListener('wheel',e=>{{
+    e.preventDefault();
+    const rect = wrap.getBoundingClientRect();
+    const mx = e.clientX-rect.left, my=e.clientY-rect.top;
+    const d = e.deltaY>0 ? 0.88 : 1.14;
+    const ns = Math.min(8,Math.max(0.15,_scale*d));
+    _px = mx - (mx-_px)*(ns/_scale);
+    _py = my - (my-_py)*(ns/_scale);
+    _scale=ns; applyXform();
+  }},{{passive:false}});
+  wrap.addEventListener('mousedown',e=>{{
+    if(e.target.closest('.mm-node,button,select')) return;
+    _dragging=true; _lx=e.clientX; _ly=e.clientY;
+  }});
+  document.addEventListener('mousemove',e=>{{
+    if(!_dragging) return;
+    _px+=e.clientX-_lx; _py+=e.clientY-_ly;
+    _lx=e.clientX; _ly=e.clientY; applyXform();
+  }});
+  document.addEventListener('mouseup',()=>{{ _dragging=false; }});
+  wrap.addEventListener('dblclick',e=>{{
+    if(e.target.closest('.mm-node,button,select')) return;
+    _scale=1;_px=0;_py=0; applyXform();
+  }});
+}}
+
+// ── Font / Theme ──────────────────────────────────────────────────────
+function changeFont(f){{
+  _font=f;
+  document.getElementById('pz-inner').style.fontFamily=f;
+  document.querySelectorAll('#mm-root svg text,.label,.nodeLabel').forEach(el=>el.style.fontFamily=f);
+}}
+async function changeTheme(t){{ await renderDiagram(t); }}
+
+// ── Maximise / Fullscreen ─────────────────────────────────────────────
+function toggleMax(){{
+  if(!document.fullscreenElement){{
+    document.documentElement.requestFullscreen().catch(()=>{{
+      window.resizeTo(screen.width,screen.height); window.moveTo(0,0);
+    }});
+    document.getElementById('btn-max').textContent='❐';
+  }} else {{
+    document.exitFullscreen();
+    document.getElementById('btn-max').textContent='□';
+  }}
+}}
+
+// ── Save PNG ──────────────────────────────────────────────────────────
+function savePng(){{
+  const svg=document.querySelector('#mm-root svg');
+  if(!svg)return;
+  const clone=svg.cloneNode(true);
+  const bb=svg.getBoundingClientRect();
+  const w=Math.max(bb.width*2,800), h=Math.max(bb.height*2,400);
+  clone.setAttribute('width',w); clone.setAttribute('height',h);
+  const blob=new Blob([new XMLSerializer().serializeToString(clone)],
+                      {{type:'image/svg+xml'}});
+  const url=URL.createObjectURL(blob);
+  const canvas=document.createElement('canvas');
+  canvas.width=w; canvas.height=h;
+  const ctx=canvas.getContext('2d');
+  ctx.fillStyle='#0d1117'; ctx.fillRect(0,0,w,h);
+  const img=new Image();
+  img.onload=()=>{{
+    ctx.drawImage(img,0,0,w,h); URL.revokeObjectURL(url);
+    const a=document.createElement('a');
+    a.download=`mermaid_${{Date.now()}}.png`;
+    a.href=canvas.toDataURL('image/png'); a.click();
+    status('PNG saved!');
+  }};
+  img.src=url;
+}}
+
+// ── Copy SVG + JS wrapper ─────────────────────────────────────────────
+function copySvgJs(){{
+  const svg=document.querySelector('#mm-root svg');
+  if(!svg)return;
+  const svgStr=svg.outerHTML.replace(/`/g,'\\`');
+  const out=`// ═══════════════════════════════════════════════
+// MermaidBot Diagram Export — v${{MM_VERSION}}
+// Generated: ${{new Date().toISOString()}}
+// Namespace: ${{MM_NS}}
+// ═══════════════════════════════════════════════
+const ${{MM_NS}} = {{
+  version : "${{MM_VERSION}}",
+  source  : \`${{MM_SOURCE.replace(/`/g,'\\`')}}\`,
+  nodes   : ${{JSON.stringify(mmDiagram.nodes,null,2)}},
+  edges   : ${{JSON.stringify(mmDiagram.edges,null,2)}},
+  svg     : \`${{svgStr}}\`,
+  /** Inject into any DOM: document.getElementById('container').innerHTML = ${{MM_NS}}.svg */
+}};`;
+  navigator.clipboard.writeText(out)
+    .then(()=>status('SVG + JS wrapper copied!'));
+}}
+
+function copyCode(){{
+  navigator.clipboard.writeText(MM_SOURCE)
+    .then(()=>status('Mermaid code copied!'));
+}}
+
+// ── Status helper ─────────────────────────────────────────────────────
+function status(msg,err){{
+  const el=document.getElementById('sb-status');
+  el.textContent=msg; el.style.color=err?'#ff7b72':'#6e7681';
+}}
+
+// ── Boot ──────────────────────────────────────────────────────────────
+initPanZoom();
+renderDiagram('dark');
+</script>
+</body>
+</html>"""
+
+
+# ── Floating diagram popup — launches Chromium app-mode window ────────────────
 class DiagramPopup:
-    """Borderless, draggable floating window that shows the rendered diagram."""
-
-    def __init__(self, master, mermaid_code: str, photo_refs: list):
-        self._code = mermaid_code
-        self._photo_refs = photo_refs
-        self._win = tk.Toplevel(master)
-        self._win.overrideredirect(True)
-        self._win.attributes("-topmost", True)
-        self._win.configure(bg=BG2)
-        self._win.resizable(False, False)
-
-        # Position near bottom-left of screen
-        sw = self._win.winfo_screenwidth()
-        sh = self._win.winfo_screenheight()
-        self._win.geometry(f"+40+{sh - 500}")
-
-        self._drag_ox = self._drag_oy = 0
-        self._build()
-
-    def _build(self):
-        # ── Title bar ─────────────────────────────────────────────────────────
-        bar = tk.Frame(self._win, bg=BG3, height=22)
-        bar.pack(fill="x")
-        bar.pack_propagate(False)
-
-        tk.Label(bar, text="  Diagram",
-                 font=("Consolas", 8, "bold"),
-                 fg=TEAL, bg=BG3).pack(side="left")
-
-        # Copy code button
-        cp = tk.Label(bar, text=" copy code ",
-                      font=("Consolas", 7), fg=FG_DIM, bg=BG3, cursor="hand2")
-        cp.pack(side="right", padx=(0, 2))
-        cp.bind("<Button-1>", self._copy_code)
-        cp.bind("<Enter>", lambda e: cp.config(fg=TEAL))
-        cp.bind("<Leave>", lambda e: cp.config(fg=FG_DIM))
-
-        # Close button
-        xb = tk.Label(bar, text=" × ", font=("Consolas", 11, "bold"),
-                      fg=FG_DIM, bg=BG3, cursor="hand2")
-        xb.pack(side="right")
-        xb.bind("<Button-1>", lambda e: self._win.destroy())
-        xb.bind("<Enter>", lambda e: xb.config(fg=RED, bg="#2d1117"))
-        xb.bind("<Leave>", lambda e: xb.config(fg=FG_DIM, bg=BG3))
-
-        # Drag
-        bar.bind("<ButtonPress-1>",   self._drag_start)
-        bar.bind("<B1-Motion>",       self._drag_move)
-
-        # ── Content: loading placeholder ──────────────────────────────────────
-        self._content = tk.Frame(self._win, bg=BG2)
-        self._content.pack(fill="both", expand=True)
-
-        self._loading = tk.Label(self._content,
-                                  text="\n  rendering…  \n",
-                                  font=("Consolas", 9, "italic"),
-                                  fg=FG_DIM, bg=BG2)
-        self._loading.pack(padx=16, pady=12)
-
-        threading.Thread(target=self._fetch, daemon=True).start()
-
-    def _fetch(self):
-        try:
-            encoded = base64.urlsafe_b64encode(
-                self._code.encode("utf-8")
-            ).decode("ascii")
-            url = f"https://mermaid.ink/img/{encoded}?bgColor=161b22"
-            req = urllib.request.Request(url, headers={"User-Agent": "MermaidBot/1"})
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                data = resp.read()
-            img = PILImage.open(io.BytesIO(data)).convert("RGBA")
-            # Cap at 700px wide
-            max_w = 700
-            if img.width > max_w:
-                ratio = max_w / img.width
-                img = img.resize((max_w, int(img.height * ratio)), PILImage.LANCZOS)
-            photo = ImageTk.PhotoImage(img)
-            self._photo_refs.append(photo)
-            self._win.after(0, lambda: self._show_image(photo))
-        except Exception as ex:
-            self._win.after(0, lambda: self._show_error(str(ex)[:120]))
-
-    def _show_image(self, photo):
-        self._loading.destroy()
-        lbl = tk.Label(self._content, image=photo, bg=BG2, cursor="fleur")
-        lbl.pack(padx=0, pady=0)
-        lbl.bind("<ButtonPress-1>",   self._drag_start)
-        lbl.bind("<B1-Motion>",       self._drag_move)
-        self._win.lift()
-
-    def _show_error(self, msg: str):
-        self._loading.config(
-            text=f"\n  render failed:\n  {msg}\n",
-            fg=RED
+    def __init__(self, _master, mermaid_code: str, _photo_refs=None):
+        html = _make_diagram_html(mermaid_code)
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".html", delete=False,
+            prefix="mmbot_", encoding="utf-8"
         )
+        tmp.write(html)
+        tmp.close()
+        self._path = tmp.name
+        threading.Thread(target=self._launch, daemon=True).start()
 
-    def _copy_code(self, _=None):
-        self._win.clipboard_clear()
-        self._win.clipboard_append(self._code)
-
-    def _drag_start(self, e):
-        self._drag_ox = e.x_root - self._win.winfo_x()
-        self._drag_oy = e.y_root - self._win.winfo_y()
-
-    def _drag_move(self, e):
-        self._win.geometry(
-            f"+{e.x_root - self._drag_ox}+{e.y_root - self._drag_oy}"
-        )
+    def _launch(self):
+        exe = _get_chromium()
+        url = "file:///" + self._path.replace("\\", "/")
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        if exe:
+            subprocess.Popen(
+                [exe, f"--app={url}", "--window-size=960,620",
+                 "--window-position=120,80"],
+                creationflags=flags,
+            )
+        else:
+            webbrowser.open(url)
 
 
 # ── Main App — 200×100 compact widget ──────────────────────────────────────────
@@ -708,23 +1155,39 @@ class MermaidBot:
         m = tk.Menu(self.root, tearoff=0, bg=BG2, fg=FG,
                     activebackground=BG3, activeforeground=FG,
                     font=("Consolas", 9), bd=0)
-        if not _check_cli():
-            m.add_command(label="⚠ API key mode — costs money", foreground=RED,
-                          command=self._prompt_api_key)
-            m.add_separator()
+
+        # Version header (non-clickable)
+        m.add_command(label=f"  MermaidBot v{__version__}", state="disabled",
+                      foreground=TEAL)
+        m.add_separator()
+
+        # Mode indicator
+        if _check_cli():
+            m.add_command(label="✓ Claude Code (Max sub) — free",
+                          state="disabled", foreground=GREEN)
+        else:
+            m.add_command(label="⚠  API key mode — costs money per request",
+                          foreground=RED, command=self._prompt_api_key)
             # Model submenu
             sub = tk.Menu(m, tearoff=0, bg=BG2, fg=FG,
                           activebackground=BG3, font=("Consolas", 9))
+            cur = load_model()
             for label, mid in MODELS:
                 sub.add_command(
-                    label=("✓ " if mid == load_model() else "   ") + label,
+                    label=("✓  " if mid == cur else "    ") + label,
                     command=lambda i=mid: save_model(i)
                 )
-            m.add_cascade(label="   Model…", menu=sub)
-            m.add_separator()
-        m.add_command(label="   Set API key…", command=self._prompt_api_key)
+            m.add_cascade(label="    Model…", menu=sub)
+
         m.add_separator()
-        m.add_command(label="   Quit", foreground=RED, command=self._quit)
+        m.add_command(label="    Set API key…",    command=self._prompt_api_key)
+        m.add_command(label="    Resize compact",  command=lambda: self.root.geometry(f"{self.W}x{self.H}"))
+        m.add_command(label="    Resize wide",     command=lambda: self.root.geometry("380x120"))
+        m.add_separator()
+        m.add_command(label="    Restart MermaidBot",
+                      command=lambda: (self._quit(), selfclean.kill_and_relaunch("mermaidbot.py")))
+        m.add_separator()
+        m.add_command(label="    Quit", foreground=RED, command=self._quit)
         try:
             x = e.x_root if e else self.root.winfo_rootx() + 10
             y = e.y_root if e else self.root.winfo_rooty() + 80
@@ -773,10 +1236,15 @@ class MermaidBot:
         menu = pystray.Menu(
             pystray.MenuItem(f"MermaidBot v{__version__}", None, enabled=False),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Show",  lambda: self.root.after(0, self._show_window)),
-            pystray.MenuItem("Hide",  lambda: self.root.after(0, self._hide_window)),
+            pystray.MenuItem("Show",    lambda: self.root.after(0, self._show_window)),
+            pystray.MenuItem("Hide",    lambda: self.root.after(0, self._hide_window)),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Quit",  lambda: self.root.after(0, self._quit)),
+            pystray.MenuItem("Restart", lambda: (
+                self.root.after(0, self._quit),
+                __import__('selfclean').kill_and_relaunch("mermaidbot.py")
+            )),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Quit",    lambda: self.root.after(0, self._quit)),
         )
         self._tray = pystray.Icon("mermaidbot", img,
                                    f"MermaidBot v{__version__}", menu)
