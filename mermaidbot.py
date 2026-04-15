@@ -4,7 +4,7 @@ Natural-language Mermaid diagram generator. Type anything, get a diagram.
 Uses the claude CLI (Max subscription) by default — no API key needed.
 Falls back to direct API key if the CLI is not available.
 """
-__version__ = "1.9.0"
+__version__ = "2.0.0"
 import selfclean; selfclean.ensure_single("mermaidbot.py")
 
 import base64, io, json, os, re, subprocess, threading, tkinter as tk
@@ -1754,6 +1754,51 @@ select.tb-sel:hover{{border-color:var(--blue)}}
   opacity:0;transition:opacity .15s;z-index:200;
 }}
 #tooltip.show{{opacity:1}}
+
+/* ── Edit panel ── */
+#edit-panel{{
+  position:fixed;bottom:22px;left:0;right:0;z-index:91;
+  background:var(--bg2);border-top:1px solid var(--bg3);
+  transform:translateY(100%);transition:transform .25s ease;
+  padding:8px 12px 10px;
+}}
+#edit-panel.open{{transform:translateY(0)}}
+.edit-panel-header{{display:flex;align-items:center;gap:8px;margin-bottom:6px}}
+.edit-panel-title{{font-size:12px;font-weight:600;color:var(--teal);flex:1}}
+#edit-code{{
+  width:100%;height:130px;
+  background:#0d1f0f;color:var(--green);
+  border:1px solid var(--bg4);border-radius:5px;
+  font-family:Consolas,monospace;font-size:12px;
+  padding:6px 8px;resize:vertical;outline:none;line-height:1.5;
+}}
+#edit-code:focus{{border-color:var(--blue)}}
+#edit-toast{{font-size:10px;color:var(--dim);margin-top:4px;min-height:14px;transition:opacity .3s}}
+
+/* ── Ask Claude panel ── */
+#ask-panel{{
+  position:fixed;bottom:22px;left:0;right:0;z-index:90;
+  background:rgba(13,17,23,.97);border-top:1px solid rgba(121,192,255,.25);
+  display:flex;align-items:center;gap:8px;padding:7px 14px;
+  transform:translateY(100%);transition:transform .25s ease;
+}}
+#ask-panel.open{{transform:translateY(0)}}
+.ask-lbl{{font-size:10px;color:var(--teal);font-weight:700;white-space:nowrap;letter-spacing:.04em}}
+#ask-input{{
+  flex:1;background:var(--bg3);color:var(--fg);
+  border:1px solid var(--bg4);border-radius:6px;
+  padding:5px 10px;font-size:12px;font-family:inherit;outline:none;
+}}
+#ask-input:focus{{border-color:var(--blue)}}
+#ask-input::placeholder{{color:var(--dim2)}}
+#ask-btn{{
+  background:var(--blue);color:var(--bg);border:none;
+  border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;
+  cursor:pointer;white-space:nowrap;transition:opacity .15s;
+}}
+#ask-btn:hover{{opacity:.85}}
+#ask-btn:disabled{{background:var(--bg4);color:var(--dim);cursor:default}}
+#ask-status{{font-size:10px;color:var(--dim);min-width:80px}}
 </style>
 </head>
 <body>
@@ -1795,6 +1840,9 @@ select.tb-sel:hover{{border-color:var(--blue)}}
   <button class="btn ok"   title="Save PNG"      onclick="savePng()">💾 PNG</button>
   <button class="btn"      title="Copy SVG+JS"   onclick="copySvgJs()">⟨/⟩ SVG</button>
   <button class="btn"      title="Copy code"     onclick="copyCode()">📋 Code</button>
+  <div class="sep"></div>
+  <button class="btn"      title="Edit diagram code" onclick="toggleEditPanel()">✏ Edit</button>
+  <button class="btn" style="color:var(--teal);font-weight:700" title="Ask Claude to modify diagram" onclick="toggleAskPanel()">✦ Ask Claude</button>
 
   <div class="tb-spacer"></div>
 
@@ -1816,6 +1864,27 @@ select.tb-sel:hover{{border-color:var(--blue)}}
   <span id="sb-hint">Scroll = zoom · Drag = pan · Dbl-click = reset · Click node = info</span>
 </div>
 <div id="tooltip"></div>
+
+<!-- ✏ Edit panel — slides up from bottom -->
+<div id="edit-panel">
+  <div class="edit-panel-header">
+    <span class="edit-panel-title">✏ Edit Diagram Code</span>
+    <button class="btn ok" onclick="regenDiagram()" title="Re-render from this code">↺ Regen</button>
+    <button class="btn"    onclick="copyEditCode()" title="Copy to clipboard">📋</button>
+    <button class="btn"    onclick="toggleEditPanel()" title="Close panel">▾ Close</button>
+  </div>
+  <textarea id="edit-code" spellcheck="false">{js_code}</textarea>
+  <div id="edit-toast"></div>
+</div>
+
+<!-- ✦ Ask Claude panel — slides up from bottom -->
+<div id="ask-panel">
+  <span class="ask-lbl">✦ Ask Claude</span>
+  <input id="ask-input" type="text"
+    placeholder="e.g. add error handling, show caching layer, highlight the bottleneck…" />
+  <button id="ask-btn" onclick="sendAskClaude()">Redraw →</button>
+  <span id="ask-status"></span>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script>
@@ -2142,6 +2211,137 @@ function status(msg,err){{
   const el=document.getElementById('sb-status');
   el.textContent=msg; el.style.color=err?'#ff7b72':'#6e7681';
 }}
+
+// ── Edit panel ───────────────────────────────────────────────────────
+function toggleEditPanel(){{
+  const p = document.getElementById('edit-panel');
+  const open = p.classList.toggle('open');
+  if(open){{
+    document.getElementById('ask-panel').classList.remove('open');
+    const ta = document.getElementById('edit-code');
+    if(!ta.value.trim()) ta.value = MM_SOURCE;
+    ta.focus();
+  }}
+  status(open ? 'Edit panel open — change the code, then click ↺ Regen' : 'Ready');
+}}
+
+async function regenDiagram(){{
+  const src = document.getElementById('edit-code').value.trim();
+  if(!src) return;
+  mermaid.initialize(mmConfig(_theme));
+  const el = document.getElementById('mm-root');
+  el.innerHTML = '';
+  try{{
+    const uid = MM_NS + '_regen_' + Date.now();
+    const {{svg}} = await mermaid.render(uid, src);
+    el.innerHTML = svg;
+    postProcess(el);
+    buildAnimSeq();
+    showAll();
+    showEditToast('✓ Diagram updated!');
+    status('Re-rendered');
+  }} catch(e) {{
+    showEditToast('⚠ ' + e.message);
+    status('Render error', true);
+  }}
+}}
+
+function copyEditCode(){{
+  const src = document.getElementById('edit-code').value;
+  navigator.clipboard.writeText(src).then(()=>showEditToast('Copied!'));
+}}
+
+function showEditToast(msg){{
+  const t = document.getElementById('edit-toast');
+  t.textContent = msg; t.style.opacity = '1';
+  clearTimeout(t._tid);
+  t._tid = setTimeout(()=>{{ t.style.opacity='0'; }}, 3500);
+}}
+
+// ── Ask Claude ────────────────────────────────────────────────────────
+function toggleAskPanel(){{
+  const p = document.getElementById('ask-panel');
+  const open = p.classList.toggle('open');
+  if(open){{
+    document.getElementById('edit-panel').classList.remove('open');
+    document.getElementById('ask-input').focus();
+  }}
+  status(open ? '✦ Ask Claude — describe your changes, press Enter or click Redraw' : 'Ready');
+}}
+
+let _askBusy = false;
+
+async function sendAskClaude(){{
+  if(_askBusy) return;
+  const inp = document.getElementById('ask-input');
+  const prompt = inp.value.trim();
+  if(!prompt) return;
+  _askBusy = true;
+  const btn = document.getElementById('ask-btn');
+  const st  = document.getElementById('ask-status');
+  btn.disabled = true; btn.textContent = '…';
+  st.textContent = 'Asking Claude…'; st.style.color = 'var(--yellow)';
+
+  const currentSrc = (document.getElementById('edit-code')?.value?.trim()) || MM_SOURCE;
+
+  try{{
+    const resp = await fetch('/api', {{
+      method:'POST',
+      headers:{{'Content-Type':'application/json'}},
+      body: JSON.stringify({{action:'diagram', prompt, source:currentSrc}})
+    }});
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if(data.error) throw new Error(data.error);
+    if(data.code){{
+      const ta = document.getElementById('edit-code');
+      if(ta) ta.value = data.code;
+      await regenFromCode(data.code);
+      inp.value = '';
+      st.textContent = '✓ Done!'; st.style.color = 'var(--green)';
+    }}
+  }} catch(e) {{
+    // No server (file:// mode) — fall back to edit panel with help message
+    st.textContent = 'No AI server — use ✏ Edit'; st.style.color = 'var(--yellow)';
+    setTimeout(()=>{{
+      document.getElementById('ask-panel').classList.remove('open');
+      toggleEditPanel();
+    }}, 1200);
+  }}
+
+  btn.disabled = false; btn.textContent = 'Redraw →';
+  _askBusy = false;
+  setTimeout(()=>{{ st.textContent = ''; }}, 5000);
+}}
+
+async function regenFromCode(src){{
+  mermaid.initialize(mmConfig(_theme));
+  const el = document.getElementById('mm-root');
+  el.innerHTML = '';
+  try{{
+    const uid = MM_NS + '_ask_' + Date.now();
+    const {{svg}} = await mermaid.render(uid, src);
+    el.innerHTML = svg;
+    postProcess(el);
+    buildAnimSeq();
+    showAll();
+    status('Diagram redrawn by Claude  ✦');
+  }} catch(e) {{
+    status('Render error: ' + e.message, true);
+  }}
+}}
+
+// Escape closes any open panel
+document.addEventListener('keydown', e=>{{
+  if(e.key === 'Escape'){{
+    document.getElementById('edit-panel').classList.remove('open');
+    document.getElementById('ask-panel').classList.remove('open');
+  }}
+  if(e.key === 'Enter' && document.getElementById('ask-panel').classList.contains('open')){{
+    e.preventDefault();
+    sendAskClaude();
+  }}
+}});
 
 // ── Boot ──────────────────────────────────────────────────────────────
 initPanZoom();
