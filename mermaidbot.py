@@ -4,14 +4,14 @@ Natural-language Mermaid diagram generator. Type anything, get a diagram.
 Uses the claude CLI (Max subscription) by default — no API key needed.
 Falls back to direct API key if the CLI is not available.
 """
-__version__ = "1.5.0"
+__version__ = "1.6.0"
 import selfclean; selfclean.ensure_single("mermaidbot.py")
 
-import json, os, re, subprocess, threading, tkinter as tk
+import base64, io, json, os, re, subprocess, threading, tkinter as tk
 import urllib.request, webbrowser, tempfile
 from pathlib import Path
 from tkinter import font as tkfont
-from PIL import Image as PILImage, ImageDraw, ImageFont
+from PIL import Image as PILImage, ImageDraw, ImageFont, ImageTk
 import pystray
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -418,6 +418,7 @@ class MermaidBot:
         self.root.minsize(400, 360)
         self.history = load_history()
         self._busy = False
+        self._photo_refs: list = []   # keep ImageTk.PhotoImage alive
         self._build()
         # Only nag for API key if the claude CLI isn't available either
         if not _check_cli() and not load_api_key():
@@ -782,6 +783,55 @@ class MermaidBot:
         )
         view_btn.pack(side="left", padx=(2, 0), pady=4)
 
+        # ── Inline rendered diagram ──────────────────────────────────────────
+        render_frame = tk.Frame(row, bg=BG2)
+        render_frame.pack(fill="x", anchor="w", pady=(0, 4))
+
+        loading_lbl = tk.Label(render_frame,
+                               text="  rendering diagram…",
+                               font=("Consolas", 8, "italic"),
+                               fg=FG_DIM, bg=BG2, pady=4)
+        loading_lbl.pack(anchor="w")
+
+        def _fetch_and_show():
+            try:
+                encoded = base64.urlsafe_b64encode(
+                    mermaid_code.encode("utf-8")
+                ).decode("ascii")
+                url = f"https://mermaid.ink/img/{encoded}?bgColor=161b22"
+                req = urllib.request.Request(url, headers={"User-Agent": "MermaidBot/1"})
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    data = resp.read()
+                img = PILImage.open(io.BytesIO(data)).convert("RGBA")
+                # Fit to chat width (~460px) keeping aspect ratio
+                max_w = 460
+                if img.width > max_w:
+                    ratio = max_w / img.width
+                    img = img.resize(
+                        (max_w, int(img.height * ratio)),
+                        PILImage.LANCZOS
+                    )
+                photo = ImageTk.PhotoImage(img)
+                self._photo_refs.append(photo)   # prevent GC
+
+                def _show():
+                    loading_lbl.destroy()
+                    lbl = tk.Label(render_frame, image=photo,
+                                   bg=BG2, cursor="hand2")
+                    lbl.pack(anchor="w", padx=6, pady=4)
+                    lbl.bind("<Button-1>", lambda e: view_diagram_in_browser(mermaid_code))
+                    self._scroll_to_bottom()
+                self.root.after(0, _show)
+
+            except Exception as ex:
+                def _err():
+                    loading_lbl.config(
+                        text=f"  render failed: {str(ex)[:80]}",
+                        fg=RED
+                    )
+                self.root.after(0, _err)
+
+        threading.Thread(target=_fetch_and_show, daemon=True).start()
         self._scroll_to_bottom()
 
     # ── Scroll helper ──────────────────────────────────────────────────────────
