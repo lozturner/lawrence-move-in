@@ -1,0 +1,377 @@
+{
+  "categories": [
+    {
+      "id": "all",
+      "label": "All",
+      "color": "#6366f1",
+      "icon": "🏠"
+    },
+    {
+      "id": "ai",
+      "label": "AI Chatbots",
+      "color": "#06b6d4",
+      "icon": "🧠"
+    },
+    {
+      "id": "browser",
+      "label": "Browser",
+      "color": "#f97316",
+      "icon": "🌐"
+    },
+    {
+      "id": "scripts",
+      "label": "Scripts",
+      "color": "#14b8a6",
+      "icon": "⚡"
+    },
+    {
+      "id": "window",
+      "label": "Windows",
+      "color": "#3b82f6",
+      "icon": "🪟"
+    },
+    {
+      "id": "suite",
+      "label": "Arms & Legs",
+      "color": "#76e3ea",
+      "icon": "🦾"
+    },
+    {
+      "id": "system",
+      "label": "System",
+      "color": "#8b5cf6",
+      "icon": "⚙️"
+    },
+    {
+      "id": "power",
+      "label": "Power",
+      "color": "#ef4444",
+      "icon": "🔌"
+    }
+  ],
+  "commands": [
+    {
+      "id": "claude",
+      "label": "Claude",
+      "category": "ai",
+      "icon": "🧊",
+      "action": {
+        "type": "url",
+        "url": "https://claude.ai/new"
+      }
+    },
+    {
+      "id": "chatgpt",
+      "label": "ChatGPT",
+      "category": "ai",
+      "icon": "🧠",
+      "action": {
+        "type": "url",
+        "url": "https://chat.openai.com/"
+      }
+    },
+    {
+      "id": "gemini",
+      "label": "Gemini",
+      "category": "ai",
+      "icon": "✨",
+      "action": {
+        "type": "url",
+        "url": "https://gemini.google.com/"
+      }
+    },
+    {
+      "id": "perplexity",
+      "label": "Perplexity",
+      "category": "ai",
+      "icon": "🔍",
+      "action": {
+        "type": "url",
+        "url": "https://www.perplexity.ai/"
+      }
+    },
+    {
+      "id": "copilot",
+      "label": "Copilot",
+      "category": "ai",
+      "icon": "🚀",
+      "action": {
+        "type": "url",
+        "url": "https://copilot.microsoft.com/"
+      }
+    },
+    {
+      "id": "grok",
+      "label": "Grok",
+      "category": "ai",
+      "icon": "🌟",
+      "action": {
+        "type": "url",
+        "url": "https://grok.x.ai/"
+      }
+    },
+    {
+      "id": "new-tab",
+      "label": "New Tab",
+      "category": "browser",
+      "icon": "➕",
+      "action": {
+        "type": "url",
+        "url": "about:blank"
+      }
+    },
+    {
+      "id": "github",
+      "label": "GitHub",
+      "category": "browser",
+      "icon": "🐙",
+      "action": {
+        "type": "url",
+        "url": "https://github.com/lozturner"
+      }
+    },
+    {
+      "id": "youtube",
+      "label": "YouTube",
+      "category": "browser",
+      "icon": "▶️",
+      "action": {
+        "type": "url",
+        "url": "https://youtube.com"
+      }
+    },
+    {
+      "id": "notion",
+      "label": "Notion",
+      "category": "browser",
+      "icon": "📝",
+      "action": {
+        "type": "url",
+        "url": "https://notion.so"
+      }
+    },
+    {
+      "id": "powershell",
+      "label": "PowerShell",
+      "category": "scripts",
+      "icon": "💻",
+      "action": {
+        "type": "run",
+        "cmd": "powershell.exe"
+      }
+    },
+    {
+      "id": "cmd",
+      "label": "CMD",
+      "category": "scripts",
+      "icon": "📺",
+      "action": {
+        "type": "run",
+        "cmd": "cmd.exe"
+      }
+    },
+    {
+      "id": "claude-code",
+      "label": "Claude Code",
+      "category": "scripts",
+      "icon": "🤖",
+      "action": {
+        "type": "run",
+        "cmd": "cmd.exe",
+        "args": "/k claude"
+      }
+    },
+    {
+      "id": "task-view",
+      "label": "Task View",
+      "category": "window",
+      "icon": "📊",
+      "action": {
+        "type": "hotkey",
+        "keys": "win+tab"
+      }
+    },
+    {
+      "id": "desktop",
+      "label": "Desktop",
+      "category": "window",
+      "icon": "🖥️",
+      "action": {
+        "type": "hotkey",
+        "keys": "win+d"
+      }
+    },
+    {
+      "id": "snap-left",
+      "label": "Snap Left",
+      "category": "window",
+      "icon": "◀️",
+      "action": {
+        "type": "hotkey",
+        "keys": "win+left"
+      }
+    },
+    {
+      "id": "snap-right",
+      "label": "Snap Right",
+      "category": "window",
+      "icon": "▶️",
+      "action": {
+        "type": "hotkey",
+        "keys": "win+right"
+      }
+    },
+    {
+      "id": "close-win",
+      "label": "Close Window",
+      "category": "window",
+      "icon": "❌",
+      "action": {
+        "type": "hotkey",
+        "keys": "alt+f4"
+      }
+    },
+    {
+      "id": "s-mermaid",
+      "label": "MermaidBot",
+      "category": "suite",
+      "icon": "🧩",
+      "action": {
+        "type": "suite",
+        "script": "mermaidbot.py"
+      }
+    },
+    {
+      "id": "s-floatbar",
+      "label": "FloatBar",
+      "category": "suite",
+      "icon": "🌊",
+      "action": {
+        "type": "suite",
+        "script": "floatbar.py"
+      }
+    },
+    {
+      "id": "s-niggly",
+      "label": "Niggly",
+      "category": "suite",
+      "icon": "📌",
+      "action": {
+        "type": "suite",
+        "script": "niggly.py"
+      }
+    },
+    {
+      "id": "s-tiles",
+      "label": "Tiles",
+      "category": "suite",
+      "icon": "🏁",
+      "action": {
+        "type": "suite",
+        "script": "tiles.py"
+      }
+    },
+    {
+      "id": "s-branch",
+      "label": "WinBranch",
+      "category": "suite",
+      "icon": "🌳",
+      "action": {
+        "type": "suite",
+        "script": "windowbranch.py"
+      }
+    },
+    {
+      "id": "s-hotcorner",
+      "label": "Hot Corners",
+      "category": "suite",
+      "icon": "🔥",
+      "action": {
+        "type": "suite",
+        "script": "hot_corner.py"
+      }
+    },
+    {
+      "id": "s-windowbot",
+      "label": "WindowBot",
+      "category": "suite",
+      "icon": "🤖",
+      "action": {
+        "type": "suite",
+        "script": "windowbot.py"
+      }
+    },
+    {
+      "id": "s-launcher",
+      "label": "Launcher",
+      "category": "suite",
+      "icon": "🚀",
+      "action": {
+        "type": "suite",
+        "script": "launcher.py"
+      }
+    },
+    {
+      "id": "settings",
+      "label": "Settings",
+      "category": "system",
+      "icon": "⚙️",
+      "action": {
+        "type": "run",
+        "cmd": "ms-settings:"
+      }
+    },
+    {
+      "id": "taskmanager",
+      "label": "Task Manager",
+      "category": "system",
+      "icon": "📋",
+      "action": {
+        "type": "run",
+        "cmd": "taskmgr.exe"
+      }
+    },
+    {
+      "id": "explorer",
+      "label": "Explorer",
+      "category": "system",
+      "icon": "📁",
+      "action": {
+        "type": "run",
+        "cmd": "explorer.exe"
+      }
+    },
+    {
+      "id": "lock",
+      "label": "Lock",
+      "category": "power",
+      "icon": "🔒",
+      "action": {
+        "type": "hotkey",
+        "keys": "win+l"
+      }
+    },
+    {
+      "id": "sleep",
+      "label": "Sleep",
+      "category": "power",
+      "icon": "😴",
+      "action": {
+        "type": "run",
+        "cmd": "rundll32.exe",
+        "args": "powrprof.dll,SetSuspendState 0,1,0"
+      }
+    },
+    {
+      "id": "restart",
+      "label": "Restart",
+      "category": "power",
+      "icon": "🔄",
+      "action": {
+        "type": "run",
+        "cmd": "shutdown",
+        "args": "/r /t 5"
+      }
+    }
+  ]
+}
