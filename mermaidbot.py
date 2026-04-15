@@ -1,11 +1,13 @@
 """
-Lawrence: Move In — MermaidBot v1.0.0
+Lawrence: Move In — MermaidBot v1.1.0
 Natural-language Mermaid diagram generator. Type anything, get a diagram.
+Uses the claude CLI (Max subscription) by default — no API key needed.
+Falls back to direct API key if the CLI is not available.
 """
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 import selfclean; selfclean.ensure_single("mermaidbot.py")
 
-import json, os, re, threading, tkinter as tk
+import json, os, re, subprocess, threading, tkinter as tk
 import urllib.request, webbrowser, tempfile
 from pathlib import Path
 from tkinter import font as tkfont
@@ -215,13 +217,67 @@ def view_diagram_in_browser(mermaid_code: str):
     tmp.close()
     webbrowser.open(f"file:///{tmp.name.replace(chr(92), '/')}")
 
-# ── LLM call ───────────────────────────────────────────────────────────────────
-def ask_claude(prompt: str, callback):
-    """Background thread — calls Claude and fires callback(mermaid_code, error)."""
+# ── CLI bridge detection ───────────────────────────────────────────────────────
+_CLI_AVAILABLE: bool | None = None   # cached after first check
+
+def _check_cli() -> bool:
+    """Return True if the `claude` CLI is on PATH and authenticated."""
+    global _CLI_AVAILABLE
+    if _CLI_AVAILABLE is not None:
+        return _CLI_AVAILABLE
+    try:
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        r = subprocess.run(
+            ["claude", "--version"],
+            capture_output=True, text=True, timeout=6,
+            creationflags=flags,
+        )
+        _CLI_AVAILABLE = (r.returncode == 0)
+    except Exception:
+        _CLI_AVAILABLE = False
+    return _CLI_AVAILABLE
+
+def _mode_label() -> str:
+    return "via Claude Code" if _check_cli() else "via API key"
+
+# ── CLI path: uses Max subscription, no separate API key ──────────────────────
+def _call_via_cli(prompt: str, callback):
+    """Fire-and-forget thread — uses the `claude` CLI (Max subscription)."""
+    def _work():
+        try:
+            full = (
+                f"{SYSTEM_PROMPT}\n\n"
+                f"User request: {prompt}\n\n"
+                f"Reply with ONLY the raw Mermaid code. No fences, no explanation."
+            )
+            flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            r = subprocess.run(
+                ["claude", "-p", full],
+                capture_output=True, text=True, timeout=60,
+                creationflags=flags,
+            )
+            if r.returncode != 0:
+                err = (r.stderr or "").strip()[:200] or "CLI returned non-zero"
+                callback(None, f"Claude CLI error: {err}")
+                return
+            raw = r.stdout.strip()
+            callback(clean_mermaid(raw), None)
+        except FileNotFoundError:
+            # CLI disappeared — retry via API key
+            _call_via_api(prompt, callback)
+        except subprocess.TimeoutExpired:
+            callback(None, "Timed out waiting for claude CLI (60 s)")
+        except Exception as e:
+            callback(None, f"CLI error: {str(e)[:120]}")
+    threading.Thread(target=_work, daemon=True).start()
+
+# ── API-key path: for distribution / selling ──────────────────────────────────
+def _call_via_api(prompt: str, callback):
+    """Fire-and-forget thread — direct Anthropic API (requires key)."""
     def _work():
         api_key = load_api_key()
         if not api_key:
-            callback(None, "No API key. Click the key icon to add one.")
+            callback(None, "No API key — click the key icon to add one.")
             return
         try:
             body = json.dumps({
@@ -239,22 +295,27 @@ def ask_claude(prompt: str, callback):
                     "anthropic-version": "2023-06-01",
                 },
             )
-            with urllib.request.urlopen(req, timeout=20) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read())
                 raw = data["content"][0]["text"].strip()
-                cleaned = clean_mermaid(raw)
-                callback(cleaned, None)
+                callback(clean_mermaid(raw), None)
         except urllib.error.HTTPError as e:
-            body_text = ""
             try:
                 body_text = e.read().decode()[:120]
             except:
-                pass
+                body_text = ""
             callback(None, f"HTTP {e.code}: {body_text}")
         except Exception as e:
-            callback(None, f"Error: {str(e)[:100]}")
-
+            callback(None, f"API error: {str(e)[:100]}")
     threading.Thread(target=_work, daemon=True).start()
+
+# ── Unified entry point ────────────────────────────────────────────────────────
+def ask_claude(prompt: str, callback):
+    """CLI first (Max sub, free), API key as fallback."""
+    if _check_cli():
+        _call_via_cli(prompt, callback)
+    else:
+        _call_via_api(prompt, callback)
 
 # ── API key dialog ─────────────────────────────────────────────────────────────
 def show_api_key_dialog(parent, on_save):
@@ -272,7 +333,7 @@ def show_api_key_dialog(parent, on_save):
 
     tk.Label(dlg, text="Anthropic API Key", font=("Consolas", 10, "bold"),
              fg=BLUE, bg=BG2).pack(pady=(18, 4))
-    tk.Label(dlg, text="Paste your key below and click Save",
+    tk.Label(dlg, text="Optional — only needed if distributing without Claude Code",
              font=("Consolas", 8), fg=FG_DIM, bg=BG2).pack()
 
     entry_frame = tk.Frame(dlg, bg=BG2, padx=16, pady=10)
@@ -313,15 +374,15 @@ def show_api_key_dialog(parent, on_save):
 class MermaidBot:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("MermaidBot  v1.0.0")
+        self.root.title(f"MermaidBot  v{__version__}")
         self.root.configure(bg=BG)
         self.root.geometry("520x500")
         self.root.minsize(400, 360)
         self.history = load_history()
         self._busy = False
         self._build()
-        # Check API key on start
-        if not load_api_key():
+        # Only nag for API key if the claude CLI isn't available either
+        if not _check_cli() and not load_api_key():
             self.root.after(400, self._prompt_api_key)
 
     # ── Layout ─────────────────────────────────────────────────────────────────
@@ -336,16 +397,24 @@ class MermaidBot:
         bar.pack(fill="x")
         bar.pack_propagate(False)
 
-        tk.Label(bar, text="MermaidBot  v1.0.0",
+        tk.Label(bar, text=f"MermaidBot  v{__version__}",
                  font=("Consolas", 11, "bold"),
                  fg=BLUE, bg=BG2).pack(side="left", padx=12, pady=6)
+
+        # Mode badge — teal = using Claude Code sub, yellow = API key
+        mode_colour = TEAL if _check_cli() else YELLOW
+        mode_text   = "Claude Code ✓" if _check_cli() else "API key"
+        self._mode_lbl = tk.Label(bar, text=mode_text,
+                                   font=("Consolas", 7),
+                                   fg=mode_colour, bg=BG2)
+        self._mode_lbl.pack(side="left", padx=(0, 10), pady=6)
 
         self.status_lbl = tk.Label(bar, text="ready",
                                     font=("Consolas", 8),
                                     fg=FG_DIM, bg=BG2)
         self.status_lbl.pack(side="right", padx=10)
 
-        # Key button
+        # Key button — always available as fallback / for distribution
         tk.Button(bar, text="key", font=("Consolas", 7),
                   fg=YELLOW, bg=BG3, relief="flat", padx=6, pady=2,
                   cursor="hand2",
