@@ -4,7 +4,7 @@ Natural-language Mermaid diagram generator. Type anything, get a diagram.
 Uses the claude CLI (Max subscription) by default — no API key needed.
 Falls back to direct API key if the CLI is not available.
 """
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 import selfclean; selfclean.ensure_single("mermaidbot.py")
 
 import json, os, re, subprocess, threading, tkinter as tk
@@ -101,32 +101,47 @@ def save_history(history: list):
     except:
         pass
 
-# ── Config / API key ───────────────────────────────────────────────────────────
-def load_api_key() -> str:
-    # Try config file first
+# ── Model catalogue (API key mode only) ───────────────────────────────────────
+MODELS = [
+    ("Haiku  — fastest, cheapest",       "claude-3-5-haiku-20241022"),
+    ("Sonnet — balanced",                 "claude-sonnet-4-5"),
+    ("Opus   — most capable, priciest",  "claude-opus-4-5"),
+]
+DEFAULT_MODEL = MODELS[0][1]   # Haiku
+
+# ── Config helpers ─────────────────────────────────────────────────────────────
+def _load_cfg() -> dict:
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-                key = cfg.get("api_key", "").strip()
-                if key:
-                    return key
+                return json.load(f)
         except:
             pass
-    # Fall back to environment variable
+    return {}
+
+def _save_cfg(cfg: dict):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+
+def load_api_key() -> str:
+    cfg = _load_cfg()
+    key = cfg.get("api_key", "").strip()
+    if key:
+        return key
     return os.environ.get("ANTHROPIC_API_KEY", "").strip()
 
 def save_api_key(key: str):
-    cfg = {}
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-        except:
-            pass
+    cfg = _load_cfg()
     cfg["api_key"] = key.strip()
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2)
+    _save_cfg(cfg)
+
+def load_model() -> str:
+    return _load_cfg().get("model", DEFAULT_MODEL)
+
+def save_model(model_id: str):
+    cfg = _load_cfg()
+    cfg["model"] = model_id
+    _save_cfg(cfg)
 
 # ── View diagram in browser ────────────────────────────────────────────────────
 def view_diagram_in_browser(mermaid_code: str):
@@ -281,7 +296,7 @@ def _call_via_api(prompt: str, callback):
             return
         try:
             body = json.dumps({
-                "model": "claude-3-5-haiku-20241022",
+                "model": load_model(),
                 "max_tokens": 1024,
                 "system": SYSTEM_PROMPT,
                 "messages": [{"role": "user", "content": prompt}],
@@ -388,9 +403,59 @@ class MermaidBot:
     # ── Layout ─────────────────────────────────────────────────────────────────
     def _build(self):
         self._build_title_bar()
+        if not _check_cli():
+            self._build_api_warning()
         self._build_chat_area()
         self._build_input_bar()
         self._show_placeholder()
+
+    def _build_api_warning(self):
+        """Fat red banner shown only when running in API key mode (costs money)."""
+        banner = tk.Frame(self.root, bg="#3d0000", pady=0)
+        banner.pack(fill="x")
+
+        # Warning icon + main message
+        top_row = tk.Frame(banner, bg="#3d0000")
+        top_row.pack(fill="x", padx=10, pady=(6, 2))
+
+        tk.Label(top_row, text="⚠  API KEY MODE — EACH REQUEST COSTS MONEY",
+                 font=("Consolas", 9, "bold"),
+                 fg=RED, bg="#3d0000").pack(side="left")
+
+        # Model selector row
+        bottom_row = tk.Frame(banner, bg="#3d0000")
+        bottom_row.pack(fill="x", padx=10, pady=(0, 6))
+
+        tk.Label(bottom_row, text="Model:",
+                 font=("Consolas", 8), fg=YELLOW, bg="#3d0000").pack(side="left")
+
+        self._model_var = tk.StringVar(value=load_model())
+
+        for label, model_id in MODELS:
+            short = label.split("—")[0].strip()
+            rb = tk.Radiobutton(
+                bottom_row, text=short,
+                variable=self._model_var, value=model_id,
+                font=("Consolas", 8),
+                fg=FG_DIM, bg="#3d0000",
+                activebackground="#3d0000", activeforeground=FG,
+                selectcolor="#550000",
+                indicatoron=True,
+                command=lambda: save_model(self._model_var.get()),
+            )
+            rb.pack(side="left", padx=(8, 0))
+
+        # Highlight the selected one
+        def _refresh_rb_colours(*_):
+            for rb_w in bottom_row.winfo_children():
+                if isinstance(rb_w, tk.Radiobutton):
+                    if rb_w["value"] == self._model_var.get():
+                        rb_w.config(fg=YELLOW)
+                    else:
+                        rb_w.config(fg=FG_DIM)
+
+        self._model_var.trace_add("write", _refresh_rb_colours)
+        _refresh_rb_colours()
 
     def _build_title_bar(self):
         bar = tk.Frame(self.root, bg=BG2, height=34)
