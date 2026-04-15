@@ -13,7 +13,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 python = sys.executable.replace("python.exe", "pythonw.exe")
 my_pid = os.getpid()
 
-SUITE_SCRIPTS = ["niggly.py", "tiles.py", "launcher.py", "_open_canvas.py", "hot_corner.py", "windowbranch.py", "launch_all.pyw"]
+SUITE_SCRIPTS = ["niggly.py", "tiles.py", "launcher.py", "_open_canvas.py", "hot_corner.py", "windowbranch.py", "mermaidbot.py", "floatbar.py", "launch_all.pyw"]
 
 
 def kill_old_processes():
@@ -53,4 +53,8 @@ subprocess.Popen([python, os.path.join(script_dir, "launcher.py")],
 subprocess.Popen([python, os.path.join(script_dir, "hot_corner.py")],
                  creationflags=0x00000008)
 subprocess.Popen([python, os.path.join(script_dir, "windowbranch.py")],
+                 creationflags=0x00000008)
+subprocess.Popen([python, os.path.join(script_dir, "mermaidbot.py")],
+                 creationflags=0x00000008)
+subprocess.Popen([python, os.path.join(script_dir, "floatbar.py")],
                  creationflags=0x00000008)

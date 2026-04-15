@@ -124,6 +124,14 @@ APPS = [
      "problem": "You come back from a break and have no idea what you were doing or what's open.",
      "solution": "Ctrl+Alt+B: full-screen radial branch map of every open window and browser tab. Human-heartbeat oscillator cycles through them. Click to jump. Zones mode shows screen-position map.",
      "category": "Window Management"},
+    {"script": "mermaidbot.py", "name": "MermaidBot", "icon": "MM", "color": "#76e3ea", "level": 2,
+     "problem": "You want to sketch out relationships between things but hate drawing diagrams.",
+     "solution": "Type anything in plain English. Claude generates a live Mermaid diagram: 1:1, 1:many, loops, forks, merges. Click View Diagram to see it rendered in the browser.",
+     "category": "AI & Voice"},
+    {"script": "floatbar.py", "name": "FloatBar", "icon": "FB", "color": "#ffa657", "level": 1,
+     "problem": "You lose track of what you were doing and where you were going.",
+     "solution": "Always-on-top 400×100 floating toolbar. ← Back: returns to your last window. → Next: forward in history. 2 more buttons coming. Drag anywhere. Never buried.",
+     "category": "Window Management"},
 ]
 
 CATEGORIES = ["Window Management", "Productivity", "AI & Voice", "Session Management", "External Tools"]
