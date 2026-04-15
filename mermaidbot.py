@@ -4,7 +4,7 @@ Natural-language Mermaid diagram generator. Type anything, get a diagram.
 Uses the claude CLI (Max subscription) by default — no API key needed.
 Falls back to direct API key if the CLI is not available.
 """
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 import selfclean; selfclean.ensure_single("mermaidbot.py")
 
 import json, os, re, subprocess, threading, tkinter as tk
@@ -799,20 +799,34 @@ class MermaidBot:
 
     # ── System tray ────────────────────────────────────────────────────────────
     def _build_tray(self):
-        # Draw a simple "MM" icon
-        img = PILImage.new("RGBA", (64, 64), (0, 0, 0, 0))
+        # Bright, distinctive icon — teal background, white "MM"
+        img = PILImage.new("RGB", (64, 64), "#0d1117")
         d   = ImageDraw.Draw(img)
-        # Dark background circle
-        d.ellipse([2, 2, 62, 62], fill="#161b22", outline="#79c0ff", width=2)
-        # "M" letters in teal
-        d.text((10, 18), "M", fill="#76e3ea")
-        d.text((34, 18), "M", fill="#76e3ea")
-        # Small node dots to hint at diagram
-        d.ellipse([14, 44, 20, 50], fill="#7ee787")
-        d.ellipse([28, 44, 34, 50], fill="#7ee787")
-        d.ellipse([44, 44, 50, 50], fill="#7ee787")
-        d.line([(20, 47), (28, 47)], fill="#7ee787", width=1)
-        d.line([(34, 47), (44, 47)], fill="#7ee787", width=1)
+        # Bright teal filled circle
+        d.ellipse([2, 2, 62, 62], fill="#76e3ea")
+        # Dark "MM" block letters drawn manually (no font needed)
+        # Left M
+        for rect in [
+            [10, 16, 15, 48],   # left stem
+            [10, 16, 22, 22],   # top crossbar left
+            [17, 22, 22, 36],   # centre-left leg
+            [22, 16, 27, 36],   # centre stem
+            [22, 16, 30, 22],   # top crossbar right
+            [27, 22, 32, 36],   # centre-right leg
+            [29, 16, 34, 48],   # right stem
+        ]:
+            d.rectangle(rect, fill="#0d1117")
+        # Right M (offset by 18px)
+        for rect in [
+            [36, 16, 41, 48],
+            [36, 16, 48, 22],
+            [43, 22, 48, 36],
+            [48, 16, 53, 36],
+            [48, 16, 56, 22],
+            [53, 22, 58, 36],
+            [55, 16, 60, 48],
+        ]:
+            d.rectangle(rect, fill="#0d1117")
 
         menu = pystray.Menu(
             pystray.MenuItem(f"MermaidBot v{__version__}", None, enabled=False),
@@ -824,7 +838,8 @@ class MermaidBot:
         )
         self._tray = pystray.Icon("mermaidbot", img,
                                    f"MermaidBot v{__version__}", menu)
-        threading.Thread(target=self._tray.run, daemon=True).start()
+        # run_detached() is the correct call when tkinter already owns the main loop
+        self._tray.run_detached()
 
     def _show_window(self):
         self.root.deiconify()
