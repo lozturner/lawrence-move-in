@@ -4,13 +4,15 @@ Natural-language Mermaid diagram generator. Type anything, get a diagram.
 Uses the claude CLI (Max subscription) by default — no API key needed.
 Falls back to direct API key if the CLI is not available.
 """
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 import selfclean; selfclean.ensure_single("mermaidbot.py")
 
 import json, os, re, subprocess, threading, tkinter as tk
 import urllib.request, webbrowser, tempfile
 from pathlib import Path
 from tkinter import font as tkfont
+from PIL import Image as PILImage, ImageDraw, ImageFont
+import pystray
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = SCRIPT_DIR / "mermaidbot_config.json"
@@ -795,8 +797,53 @@ class MermaidBot:
 
         show_api_key_dialog(self.root, _on_save)
 
+    # ── System tray ────────────────────────────────────────────────────────────
+    def _build_tray(self):
+        # Draw a simple "MM" icon
+        img = PILImage.new("RGBA", (64, 64), (0, 0, 0, 0))
+        d   = ImageDraw.Draw(img)
+        # Dark background circle
+        d.ellipse([2, 2, 62, 62], fill="#161b22", outline="#79c0ff", width=2)
+        # "M" letters in teal
+        d.text((10, 18), "M", fill="#76e3ea")
+        d.text((34, 18), "M", fill="#76e3ea")
+        # Small node dots to hint at diagram
+        d.ellipse([14, 44, 20, 50], fill="#7ee787")
+        d.ellipse([28, 44, 34, 50], fill="#7ee787")
+        d.ellipse([44, 44, 50, 50], fill="#7ee787")
+        d.line([(20, 47), (28, 47)], fill="#7ee787", width=1)
+        d.line([(34, 47), (44, 47)], fill="#7ee787", width=1)
+
+        menu = pystray.Menu(
+            pystray.MenuItem(f"MermaidBot v{__version__}", None, enabled=False),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Show",  lambda: self.root.after(0, self._show_window)),
+            pystray.MenuItem("Hide",  lambda: self.root.after(0, self._hide_window)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Quit",  lambda: self.root.after(0, self._quit)),
+        )
+        self._tray = pystray.Icon("mermaidbot", img,
+                                   f"MermaidBot v{__version__}", menu)
+        threading.Thread(target=self._tray.run, daemon=True).start()
+
+    def _show_window(self):
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
+    def _hide_window(self):
+        self.root.withdraw()
+
+    def _quit(self):
+        try: self._tray.stop()
+        except: pass
+        self.root.after(0, self.root.destroy)
+
     # ── Run ────────────────────────────────────────────────────────────────────
     def run(self):
+        # X button hides to tray instead of quitting
+        self.root.protocol("WM_DELETE_WINDOW", self._hide_window)
+        self._build_tray()
         self.root.mainloop()
 
 
