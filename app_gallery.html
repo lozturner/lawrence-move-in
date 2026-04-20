@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lawrence Move-In App Gallery</title>
+    <style>
+        body { background-color: #1e1e2e; color: #cdd6f4; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }
+        h1 { text-align: center; color: #89b4fa; }
+        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; padding: 20px; }
+        .card { background-color: #313244; border-radius: 10px; overflow: hidden; transition: transform 0.2s; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .card:hover { transform: translateY(-5px); }
+        .card img { width: 100%; height: 200px; object-fit: cover; border-bottom: 2px solid #45475a; }
+        .card-content { padding: 15px; }
+        .card-title { font-size: 1.25rem; color: #f5c2e7; margin: 0 0 10px 0; }
+        .card-desc { font-size: 0.9rem; color: #a6adc8; line-height: 1.4; }
+    </style>
+</head>
+<body>
+    <h1>Lawrence Move-In: App Gallery</h1>
+    <div class="gallery">
+        <div class="card"><img src="thumbnails/aitimer.png"><div class="card-content"><h2 class="card-title">AI Timer</h2><p class="card-desc">Multiple concurrent timers and check-in popups.</p></div></div>
+        <div class="card"><img src="thumbnails/annoyances.png"><div class="card-content"><h2 class="card-title">Annoyances</h2><p class="card-desc">Persistent log with AI workarounds.</p></div></div>
+        <div class="card"><img src="thumbnails/app_tray.png"><div class="card-content"><h2 class="card-title">App Tray</h2><p class="card-desc">Tray icons for most-used apps.</p></div></div>
+        <div class="card"><img src="thumbnails/capture.png"><div class="card-content"><h2 class="card-title">Capture</h2><p class="card-desc">Morning brain dump tool.</p></div></div>
+        <div class="card"><img src="thumbnails/hot_corner.png"><div class="card-content"><h2 class="card-title">Hot Corners</h2><p class="card-desc">Cursor hits a screen corner, action fires.</p></div></div>
+        <div class="card"><img src="thumbnails/hub.png"><div class="card-content"><h2 class="card-title">Hub</h2><p class="card-desc">Steam Deck-style tile launcher.</p></div></div>
+        <div class="card"><img src="thumbnails/kidlin.png"><div class="card-content"><h2 class="card-title">Kidlin's Law</h2><p class="card-desc">Type messy thinking, AI returns a clean statement.</p></div></div>
+        <div class="card"><img src="thumbnails/launcher.png"><div class="card-content"><h2 class="card-title">Master Launcher</h2><p class="card-desc">Gamification command centre.</p></div></div>
+        <div class="card"><img src="thumbnails/linker.png"><div class="card-content"><h2 class="card-title">Linker</h2><p class="card-desc">Tile board with AI suggestions for phrases.</p></div></div>
+        <div class="card"><img src="thumbnails/mouse_pause.png"><div class="card-content"><h2 class="card-title">Mouse Pause</h2><p class="card-desc">Idle detection action panel.</p></div></div>
+        <div class="card"><img src="thumbnails/nacho.png"><div class="card-content"><h2 class="card-title">NACHO</h2><p class="card-desc">Voice AI that greets you and listens.</p></div></div>
+        <div class="card"><img src="thumbnails/nag.png"><div class="card-content"><h2 class="card-title">Nag</h2><p class="card-desc">Timetable nagger linked to Google Calendar.</p></div></div>
+        <div class="card"><img src="thumbnails/niggly.png"><div class="card-content"><h2 class="card-title">Focus Rules</h2><p class="card-desc">IF/THEN window management rules.</p></div></div>
+        <div class="card"><img src="thumbnails/replay.png"><div class="card-content"><h2 class="card-title">Replay</h2><p class="card-desc">Session recorder with scrubbable timeline.</p></div></div>
+        <div class="card"><img src="thumbnails/scribe.png"><div class="card-content"><h2 class="card-title">Scribe</h2><p class="card-desc">Floating offline speech-to-text.</p></div></div>
+        <div class="card"><img src="thumbnails/steps.png"><div class="card-content"><h2 class="card-title">Steps Recorder</h2><p class="card-desc">Records every click, keystroke, and window.</p></div></div>
+        <div class="card"><img src="thumbnails/tiles.png"><div class="card-content"><h2 class="card-title">Window Tiles</h2><p class="card-desc">Visual map of open windows as tiles.</p></div></div>
+        <div class="card"><img src="thumbnails/voicesort.png"><div class="card-content"><h2 class="card-title">Voice Sort</h2><p class="card-desc">AI categorisation of notes into markdown.</p></div></div>
+        <div class="card"><img src="thumbnails/watcher.png"><div class="card-content"><h2 class="card-title">Watcher</h2><p class="card-desc">Claude Vision deducing your activity.</p></div></div>
+        <div class="card"><img src="thumbnails/winddown.png"><div class="card-content"><h2 class="card-title">Winddown</h2><p class="card-desc">Session wind-down with state capture.</p></div></div>
+    </div>
+</body>
+</html>
